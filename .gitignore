@@ -7,4 +7,5 @@ __pycache__/
 jobs.db
 jobs.db-wal
 jobs.db-shm
+cover_letters/
 .DS_Store

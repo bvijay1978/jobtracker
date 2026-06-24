@@ -11,6 +11,7 @@ import datetime as dt
 import pandas as pd
 import streamlit as st
 
+import config
 import db
 
 st.set_page_config(page_title="Job Application Tracker", page_icon="🎯", layout="wide")
@@ -215,6 +216,10 @@ column_config = {
     "fit_notes": st.column_config.TextColumn("Fit notes", width="large"),
     "status": st.column_config.SelectboxColumn("Status", options=status_options, width="small"),
     "cv_version": st.column_config.TextColumn("CV version", width="medium"),
+    "cover_letter": st.column_config.TextColumn(
+        "Cover letter", width="medium", disabled=True,
+        help="Generated draft filename — use the Generate cover letter button below",
+    ),
     "date_applied": st.column_config.TextColumn("Applied", help="YYYY-MM-DD", width="small"),
     "outcome": st.column_config.TextColumn("Outcome / Next step", width="large"),
 }
@@ -248,4 +253,35 @@ with col_export:
         file_name=f"job_tracker_{today.isoformat()}.csv",
         mime="text/csv",
         width="stretch",
+    )
+
+# --- Cover letters --------------------------------------------------------- #
+st.divider()
+st.subheader("✍️ Cover letters")
+if df.empty:
+    st.caption("Add a role first, then generate a cover-letter draft for it.")
+else:
+    role_map = {}
+    for _, r in df.iterrows():
+        company = r["company"] if pd.notna(r["company"]) else "—"
+        title = r["title"] if pd.notna(r["title"]) else "(untitled)"
+        role_map[f"{int(r['id'])} · {title} — {company}"] = int(r["id"])
+
+    cl_pick, cl_btn = st.columns([3, 1])
+    chosen = cl_pick.selectbox("Role", list(role_map), key="cl_role", label_visibility="collapsed")
+    if cl_btn.button("✍️ Generate cover letter", width="stretch"):
+        import cover_letter
+
+        with db.connect() as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (role_map[chosen],)).fetchone()
+            path = cover_letter.generate_cover_letter(dict(row))
+            db.update_job(conn, role_map[chosen], {"cover_letter": path.name})
+            conn.commit()
+        refresh()
+        st.success(f"Draft saved → {path}")
+        st.rerun()
+    st.caption(
+        f"Drafts are saved to `{config.COVER_LETTER_DIR}` and the filename is "
+        "recorded in the **Cover letter** column. It's a starting draft — finish "
+        "the bracketed parts, or ask Claude for a fully tailored version."
     )

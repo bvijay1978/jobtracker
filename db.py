@@ -26,6 +26,7 @@ FIELDS = [
     "fit_notes",
     "status",
     "cv_version",
+    "cover_letter",
     "date_applied",
     "outcome",
 ]
@@ -48,6 +49,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     fit_notes     TEXT,
     status        TEXT NOT NULL DEFAULT 'Found',
     cv_version    TEXT,
+    cover_letter  TEXT,
     date_applied  TEXT,
     outcome       TEXT,
     source_job_id TEXT,                       -- numeric job-id parsed from the link, for dedupe
@@ -77,6 +79,15 @@ def connect(db_path: Path | str = DB_PATH) -> sqlite3.Connection:
 def init_db(db_path: Path | str = DB_PATH) -> None:
     with connect(db_path) as conn:
         conn.executescript(SCHEMA)
+        _ensure_columns(conn)
+
+
+def _ensure_columns(conn: sqlite3.Connection) -> None:
+    """Add columns introduced after a database was first created (idempotent)."""
+    existing = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+    for column, ddl in (("cover_letter", "TEXT"),):
+        if column not in existing:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {ddl}")
 
 
 def insert_job(conn: sqlite3.Connection, data: dict[str, Any]) -> int:

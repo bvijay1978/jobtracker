@@ -35,3 +35,6 @@ XLSX_PATH = _path_env("JOBTRACKER_XLSX", None)
 # Optional: an external SQLite database that some other tool writes new roles
 # into (e.g. a scraper or automation), for import_jobs.py to pull from.
 IMPORT_DB_PATH = _path_env("JOBTRACKER_IMPORT_DB", None)
+
+# Where generated cover-letter drafts are saved. Defaults to ./cover_letters.
+COVER_LETTER_DIR = _path_env("JOBTRACKER_COVER_LETTER_DIR", PROJECT_ROOT / "cover_letters")
