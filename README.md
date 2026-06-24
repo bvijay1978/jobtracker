@@ -101,6 +101,7 @@ Rejected, Expired` (free text is allowed too).
 | `tracker_add.py` | Add/update a role from a script or the shell (upsert) |
 | `seed.py` / `sample_jobs.csv` | Demo data |
 | `examples/` | Copy-paste prompt to generate a job-hunt skill that feeds the tracker |
+| `docs/` | Install guide, rollout backlog, and [architecture & decision records](docs/ARCHITECTURE.md) |
 | `tests/` | Pytest suite |
 
 ## Development
