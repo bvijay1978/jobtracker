@@ -72,6 +72,12 @@ app) merges the new ones in, leaving roles you've already edited untouched:
 JOBTRACKER_IMPORT_DB=/path/to/incoming/jobs.db python import_jobs.py
 ```
 
+Don't have an upstream yet? [examples/generate-job-hunt-skill.md](examples/generate-job-hunt-skill.md)
+is a copy-paste prompt for building your own job-hunt skill with Claude — it
+searches the boards you choose, drafts tailored CVs, and feeds new roles straight
+into this tracker. (Requires Claude with skill creation and the "Claude in Chrome"
+extension.)
+
 ## Schema (`jobs` table)
 
 `date_found, title, company, type, rate, location, posted, link, fit_notes,
@@ -94,6 +100,7 @@ Rejected` (free text is allowed too).
 | `import_jobs.py` | Import new roles from an external SQLite database |
 | `tracker_add.py` | Add/update a role from a script or the shell (upsert) |
 | `seed.py` / `sample_jobs.csv` | Demo data |
+| `examples/` | Copy-paste prompt to generate a job-hunt skill that feeds the tracker |
 | `tests/` | Pytest suite |
 
 ## Development
