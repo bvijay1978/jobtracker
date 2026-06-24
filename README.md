@@ -85,8 +85,11 @@ status, cv_version, date_applied, outcome` — plus a managed `id`, a
 `source_job_id` (the numeric job-id parsed from the link, used for de-duplication)
 and `created_at` / `updated_at` timestamps.
 
-Canonical statuses: `Found, Applied, Shortlisted, Interview, Offer, Pass,
-Rejected, Expired` (free text is allowed too).
+Canonical statuses: `Found, Draft CV, Draft CV & Cover Letter, CV Drafted,
+Applied, Shortlisted, Interview, Offer, Pass, Rejected, Expired` (free text is
+allowed too). Setting a role to **Draft CV** / **Draft CV & Cover Letter** in the
+To-action queue generates the document(s) on save, then settles it to
+**CV Drafted** — so you only spend effort on roles you choose to pursue.
 
 ## Project layout
 
@@ -99,6 +102,8 @@ Rejected, Expired` (free text is allowed too).
 | `migrate.py` | Optional importer for a tracker spreadsheet |
 | `import_jobs.py` | Import new roles from an external SQLite database |
 | `tracker_add.py` | Add/update a role from a script or the shell (upsert) |
+| `cv_builder.py` / `cover_letter.py` | On-demand CV / cover-letter draft generators |
+| `profile.example.json` | Template for your CV profile (copy to git-ignored `profile.json`) |
 | `seed.py` / `sample_jobs.csv` | Demo data |
 | `examples/` | Copy-paste prompt to generate a job-hunt skill that feeds the tracker |
 | `docs/` | Install guide, rollout backlog, and [architecture & decision records](docs/ARCHITECTURE.md) |

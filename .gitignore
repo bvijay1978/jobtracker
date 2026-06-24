@@ -8,4 +8,6 @@ jobs.db
 jobs.db-wal
 jobs.db-shm
 cover_letters/
+cvs/
+profile.json
 .DS_Store

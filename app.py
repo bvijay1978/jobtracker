@@ -94,9 +94,20 @@ def _parse_job_id(link: str | None) -> str | None:
     return m.group(1) if m else None
 
 
-def persist_status_changes(edited: pd.DataFrame) -> int:
-    """Update only the status of edited rows — used by the To-action queue."""
-    updated = 0
+DRAFT_CV = "Draft CV"
+DRAFT_CV_CL = "Draft CV & Cover Letter"
+
+
+def persist_status_changes(edited: pd.DataFrame) -> dict:
+    """Apply To-action status edits.
+
+    The two action statuses draft documents on save and then settle the role to
+    'CV Drafted' (so a later save doesn't redraft):
+      - 'Draft CV'                 -> generate a CV
+      - 'Draft CV & Cover Letter'  -> generate a CV and a cover letter
+    All other status changes are written through as-is.
+    """
+    result = {"updated": 0, "cv": 0, "cl": 0, "errors": []}
     with db.connect() as conn:
         originals = {r["id"]: dict(r) for r in db.fetch_all(conn)}
         for _, row in edited.iterrows():
@@ -105,14 +116,34 @@ def persist_status_changes(edited: pd.DataFrame) -> int:
                 continue
             rid = int(rid)
             orig = originals.get(rid)
-            if orig is None:
+            if orig is None or _norm(orig.get("status")) == (_norm(row.get("status")) or "Found"):
                 continue
             new_status = _norm(row.get("status")) or "Found"
-            if _norm(orig.get("status")) != new_status:
+
+            if new_status in (DRAFT_CV, DRAFT_CV_CL):
+                data = {"status": "CV Drafted"}
+                try:
+                    import cv_builder
+
+                    data["cv_version"] = cv_builder.generate_cv(orig).name
+                    result["cv"] += 1
+                except Exception as exc:  # noqa: BLE001 - surface to the user
+                    result["errors"].append(f"#{rid} CV: {exc}")
+                    continue  # leave status unchanged if drafting failed
+                if new_status == DRAFT_CV_CL:
+                    try:
+                        import cover_letter
+
+                        data["cover_letter"] = cover_letter.generate_cover_letter(orig).name
+                        result["cl"] += 1
+                    except Exception as exc:  # noqa: BLE001
+                        result["errors"].append(f"#{rid} cover letter: {exc}")
+                db.update_job(conn, rid, data)
+            else:
                 db.update_job(conn, rid, {"status": new_status})
-                updated += 1
+                result["updated"] += 1
         conn.commit()
-    return updated
+    return result
 
 
 # --------------------------------------------------------------------------- #
@@ -194,10 +225,20 @@ if not to_action.empty:
             key="to_action_grid",
         )
         if st.button("✅ Save actions", type="primary", key="save_to_action"):
-            n = persist_status_changes(ta_edited)
+            res = persist_status_changes(ta_edited)
             refresh()
-            st.success(f"Updated {n} role(s) — they've moved out of the queue.")
-            st.rerun()
+            parts = []
+            if res["updated"]:
+                parts.append(f"{res['updated']} status update(s)")
+            if res["cv"]:
+                parts.append(f"{res['cv']} CV(s) drafted")
+            if res["cl"]:
+                parts.append(f"{res['cl']} cover letter(s) drafted")
+            st.success("Saved — " + (", ".join(parts) if parts else "no changes") + ".")
+            for err in res["errors"]:
+                st.warning(err)
+            if not res["errors"]:
+                st.rerun()
 
 # --- Filters --------------------------------------------------------------- #
 _found_dates = pd.to_datetime(df["date_found"], errors="coerce").dt.date.dropna()
@@ -346,8 +387,12 @@ with col_export:
     )
 with col_gmail:
     st.link_button(
-        "📧 Check Gmail for updates", gmail_url, width="stretch",
-        help="Opens Gmail in your browser, searched for recent mail about your active applications",
+        "📧 Search Gmail for replies", gmail_url, width="stretch",
+        help=(
+            "Opens Gmail in a new browser tab, pre-searched for emails from the last "
+            "90 days mentioning the recruiters/companies you've applied to. It only "
+            "opens a search — it does not read your inbox or change the tracker."
+        ),
     )
 
 # --- Cover letters --------------------------------------------------------- #

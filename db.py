@@ -33,7 +33,12 @@ FIELDS = [
 
 # Canonical pipeline statuses. "etc." in the brief — kept open via free text in
 # the UI, but these drive ordering, metrics and the default dropdown.
-STATUSES = ["Found", "Applied", "Shortlisted", "Interview", "Offer", "Pass", "Rejected", "Expired"]
+# "Draft CV" / "Draft CV & Cover Letter" are one-shot action triggers: setting one
+# in the To-action queue drafts the document(s) on save, then settles to "CV Drafted".
+STATUSES = [
+    "Found", "Draft CV", "Draft CV & Cover Letter", "CV Drafted",
+    "Applied", "Shortlisted", "Interview", "Offer", "Pass", "Rejected", "Expired",
+]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (

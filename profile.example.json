@@ -1,0 +1,31 @@
+{
+  "name": "Your Name",
+  "contact": "City  |  you@example.com  |  linkedin.com/in/you",
+  "profile": "One- or two-sentence professional summary, echoing the language of the roles you target.",
+  "competencies": [
+    "Skill one", "Skill two", "Skill three", "Skill four", "Skill five", "Skill six"
+  ],
+  "jobs": [
+    {
+      "title": "Most Recent Job Title",
+      "company": "Company",
+      "dates": "2022 – Present",
+      "bullets": [
+        "Achievement bullet with a concrete metric.",
+        "Second achievement bullet."
+      ]
+    },
+    {
+      "title": "Previous Job Title",
+      "company": "Previous Company",
+      "dates": "2019 – 2022",
+      "bullets": ["Achievement bullet."]
+    }
+  ],
+  "achievements": [
+    "Headline achievement with a number.",
+    "Another standout result."
+  ],
+  "certifications": "Certification one  |  Certification two",
+  "education": "Degree, Institution"
+}

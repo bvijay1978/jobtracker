@@ -118,4 +118,21 @@ nothing machine-specific committed.
 
 ---
 
+### ADR-007 — Draft CVs on demand, not during the sweep
+
+**Context.** Generating a tailored CV for *every* role a job-hunt sweep turns up
+is the most expensive step, and most of those roles are never applied to.
+**Decision.** The sweep logs roles as `Found` only — no CVs. CV (and cover-letter)
+drafting is triggered **per role, on demand**, by setting its status to
+`Draft CV` or `Draft CV & Cover Letter` in the To-action queue; on save the app
+generates the document(s), records the filenames, and settles the role to
+`CV Drafted`. The in-app draft is a fast, template-tailored first cut (the app
+has no LLM); deep JD-tailoring on the few roles actually submitted is an agent
+task (ask Claude). The CV builder reads a **git-ignored `profile.json`** so the
+shareable repo carries no personal data.
+**Consequences.** Effort is spent only on roles the user chooses to pursue;
+the job-hunt skill was updated to stop auto-drafting in the sweep.
+
+---
+
 *Add new decisions as `ADR-NNN` records above this line, newest last.*

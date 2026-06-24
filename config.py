@@ -38,3 +38,10 @@ IMPORT_DB_PATH = _path_env("JOBTRACKER_IMPORT_DB", None)
 
 # Where generated cover-letter drafts are saved. Defaults to ./cover_letters.
 COVER_LETTER_DIR = _path_env("JOBTRACKER_COVER_LETTER_DIR", PROJECT_ROOT / "cover_letters")
+
+# Where generated CV drafts are saved. Defaults to ./cvs.
+CV_DIR = _path_env("JOBTRACKER_CV_DIR", PROJECT_ROOT / "cvs")
+
+# Profile data the in-app CV builder reads (kept out of the repo — copy
+# profile.example.json to profile.json and fill it in).
+PROFILE_PATH = _path_env("JOBTRACKER_PROFILE", PROJECT_ROOT / "profile.json")

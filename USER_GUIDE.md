@@ -67,6 +67,8 @@ The table is editable in place:
 | Status | Meaning |
 |---|---|
 | **Found** | Logged but not yet applied. |
+| **Draft CV** / **Draft CV & Cover Letter** | Action triggers — set one in the To-action queue and **Save** to generate the document(s) for that role; it then becomes **CV Drafted**. Only roles you pick spend effort. |
+| **CV Drafted** | CV (and maybe cover letter) ready; not yet applied. |
 | **Applied** | Application submitted. |
 | **Shortlisted** | Positive response from the employer/recruiter. |
 | **Interview** | Interview arranged or held. |
