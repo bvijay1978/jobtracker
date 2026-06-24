@@ -1,0 +1,9 @@
+date_found,title,company,type,rate,location,posted,link,fit_notes,status,cv_version,date_applied,outcome
+2026-06-02,Senior Backend Engineer,Example Recruiting,Contract,£650/day,London (Remote),2026-05-30,https://www.example.com/jobs/senior-backend-engineer/57010001,Strong match on the platform stack,Applied,cv-backend.pdf,2026-06-03,Applied via portal
+2026-06-04,Platform Engineer,Northwind Talent,Permanent,£95k,Manchester (Hybrid),2026-06-01,https://www.example.com/jobs/platform-engineer/57010002,Good Kubernetes/Terraform fit,Shortlisted,cv-platform.pdf,2026-06-05,Recruiter call booked
+2026-06-06,Staff Software Engineer,Acme Search,Permanent,£120k,London,2026-06-05,https://www.example.com/jobs/staff-software-engineer/57010003,Leans more frontend than my background,Found,,,
+2026-06-09,Data Engineer,Bright Hire,Contract,£600/day,Remote (UK),2026-06-08,https://www.example.com/jobs/data-engineer/57010004,Airflow + dbt — exact match,Interview,cv-data.pdf,2026-06-10,First interview 2026-06-15
+2026-06-11,DevOps Engineer,Quay Recruitment,Contract,£575/day,Edinburgh (Hybrid),2026-06-09,https://www.example.com/jobs/devops-engineer/57010005,Below day-rate floor,Pass,,,Declined — rate too low
+2026-06-12,Site Reliability Engineer,Meridian Tech,Permanent,£110k,London (Hybrid),2026-06-11,https://www.example.com/jobs/sre/57010006,On-call rota; strong comp,Applied,cv-sre.pdf,2026-06-13,Applied via referral
+2026-06-16,Full Stack Developer,Cobalt Partners,Permanent,£85k,Bristol,2026-06-15,https://www.example.com/jobs/full-stack-developer/57010007,Stack matches; location commute,Found,,,
+2026-06-18,Lead Software Engineer,Harbour Talent,Permanent,£130k,London,2026-06-17,https://www.example.com/jobs/lead-software-engineer/57010008,Leadership role; great fit,Rejected,cv-lead.pdf,2026-06-19,Rejected at CV stage
