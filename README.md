@@ -86,7 +86,7 @@ status, cv_version, date_applied, outcome` — plus a managed `id`, a
 and `created_at` / `updated_at` timestamps.
 
 Canonical statuses: `Found, Applied, Shortlisted, Interview, Offer, Pass,
-Rejected` (free text is allowed too).
+Rejected, Expired` (free text is allowed too).
 
 ## Project layout
 

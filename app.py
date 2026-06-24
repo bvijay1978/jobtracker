@@ -94,6 +94,27 @@ def _parse_job_id(link: str | None) -> str | None:
     return m.group(1) if m else None
 
 
+def persist_status_changes(edited: pd.DataFrame) -> int:
+    """Update only the status of edited rows — used by the To-action queue."""
+    updated = 0
+    with db.connect() as conn:
+        originals = {r["id"]: dict(r) for r in db.fetch_all(conn)}
+        for _, row in edited.iterrows():
+            rid = row.get("id")
+            if rid is None or (isinstance(rid, float) and pd.isna(rid)):
+                continue
+            rid = int(rid)
+            orig = originals.get(rid)
+            if orig is None:
+                continue
+            new_status = _norm(row.get("status")) or "Found"
+            if _norm(orig.get("status")) != new_status:
+                db.update_job(conn, rid, {"status": new_status})
+                updated += 1
+        conn.commit()
+    return updated
+
+
 # --------------------------------------------------------------------------- #
 # UI
 # --------------------------------------------------------------------------- #
@@ -112,6 +133,15 @@ def _applied_recently(s: pd.Series) -> int:
     return int(((dates >= week_ago) & (dates <= today)).sum())
 
 
+# "To action" = found but not yet applied to or passed — the work queue.
+ACTIONED_STATUSES = {
+    "Applied", "Shortlisted", "Interview", "Offer", "Pass", "Rejected",
+    "Expired", "Not Applicable", "Not Applying",
+}
+to_action = df[~df["status"].isin(ACTIONED_STATUSES)].sort_values(
+    "date_found", ascending=False, na_position="last"
+)
+
 m1, m2, m3, m4, m5 = st.columns(5)
 m1.metric("Total roles", len(df))
 m2.metric("Applied", int((df["status"] == "Applied").sum()))
@@ -119,8 +149,55 @@ m3.metric(
     "Shortlisted / Interview",
     int(df["status"].isin(["Shortlisted", "Interview", "Offer"]).sum()),
 )
-m4.metric("Open pipeline", int((df["status"] == "Found").sum()))
+m4.metric("🆕 To action", len(to_action))
 m5.metric("Applied this week", _applied_recently(df["date_applied"]))
+
+# --- To action: found, not yet applied or passed -------------------------- #
+if not to_action.empty:
+    _ta_status_opts = list(dict.fromkeys([*db.STATUSES, *sorted(df["status"].dropna().unique())]))
+    with st.container(border=True):
+        st.markdown(f"#### 🆕 To action — {len(to_action)} role(s) not yet applied to or passed")
+        st.caption(
+            "Set a **Status** (Applied, Pass, …) and click **Save actions** — the role then "
+            "drops off this queue. Other details can be filled in the main grid below."
+        )
+        ta_edited = st.data_editor(
+            to_action[[
+                "id", "date_found", "title", "company", "type", "rate", "location",
+                "link", "fit_notes", "cv_version", "status",
+            ]],
+            column_config={
+                "id": st.column_config.NumberColumn("id", disabled=True, width="small"),
+                "date_found": st.column_config.TextColumn("Found", disabled=True, width="small"),
+                "title": st.column_config.TextColumn("Title", disabled=True, width="large"),
+                "company": st.column_config.TextColumn(
+                    "Company / Recruiter", disabled=True, width="medium",
+                ),
+                "type": st.column_config.TextColumn("Type", disabled=True, width="small"),
+                "rate": st.column_config.TextColumn("Rate", disabled=True, width="small"),
+                "location": st.column_config.TextColumn("Location", disabled=True, width="medium"),
+                "link": st.column_config.LinkColumn(
+                    "Link", display_text="open", disabled=True, width="small",
+                ),
+                "fit_notes": st.column_config.TextColumn("Fit notes", disabled=True, width="large"),
+                "cv_version": st.column_config.TextColumn(
+                    "CV draft", disabled=True, width="medium",
+                    help="Drafted CV filename — open it from your CVs folder",
+                ),
+                "status": st.column_config.SelectboxColumn(
+                    "Status", options=_ta_status_opts, width="small", required=True,
+                ),
+            },
+            num_rows="fixed",
+            hide_index=True,
+            width="stretch",
+            key="to_action_grid",
+        )
+        if st.button("✅ Save actions", type="primary", key="save_to_action"):
+            n = persist_status_changes(ta_edited)
+            refresh()
+            st.success(f"Updated {n} role(s) — they've moved out of the queue.")
+            st.rerun()
 
 # --- Filters --------------------------------------------------------------- #
 _found_dates = pd.to_datetime(df["date_found"], errors="coerce").dt.date.dropna()

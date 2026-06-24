@@ -33,7 +33,7 @@ FIELDS = [
 
 # Canonical pipeline statuses. "etc." in the brief — kept open via free text in
 # the UI, but these drive ordering, metrics and the default dropdown.
-STATUSES = ["Found", "Applied", "Shortlisted", "Interview", "Offer", "Pass", "Rejected"]
+STATUSES = ["Found", "Applied", "Shortlisted", "Interview", "Offer", "Pass", "Rejected", "Expired"]
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (

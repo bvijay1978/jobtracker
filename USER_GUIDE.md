@@ -73,6 +73,7 @@ The table is editable in place:
 | **Offer** | Offer received. |
 | **Pass** | You decided not to pursue it. |
 | **Rejected** | They declined your application. |
+| **Expired** | The role was withdrawn or closed (often shortly after being found). |
 
 You can also type your own status text if none of these fit.
 
