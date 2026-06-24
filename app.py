@@ -7,6 +7,7 @@ Data lives in jobs.db (SQLite); see migrate.py for the initial import.
 from __future__ import annotations
 
 import datetime as dt
+from urllib.parse import quote
 
 import pandas as pd
 import streamlit as st
@@ -236,7 +237,19 @@ edited = st.data_editor(
 
 shown_ids = {int(i) for i in view["id"].dropna().tolist()}
 
-col_save, col_export, _ = st.columns([1, 1, 4])
+# Gmail deep-link: open Gmail searched for recent mail about active applications.
+_active = df[df["status"].isin(["Applied", "Shortlisted", "Interview", "Offer"])]
+_companies = [c for c in _active["company"].dropna().unique().tolist() if str(c).strip()][:15]
+if _companies:
+    _query = "newer_than:90d (" + " OR ".join(f'"{c}"' for c in _companies) + ")"
+else:
+    _query = (
+        'newer_than:30d (subject:(application OR interview OR role OR vacancy) '
+        'OR "your application" OR "next steps")'
+    )
+gmail_url = "https://mail.google.com/mail/u/0/#search/" + quote(_query)
+
+col_save, col_export, col_gmail, _ = st.columns([1, 1, 1.4, 2.6])
 with col_save:
     if st.button("💾 Save changes", type="primary", width="stretch"):
         result = persist_changes(edited, shown_ids)
@@ -253,6 +266,11 @@ with col_export:
         file_name=f"job_tracker_{today.isoformat()}.csv",
         mime="text/csv",
         width="stretch",
+    )
+with col_gmail:
+    st.link_button(
+        "📧 Check Gmail for updates", gmail_url, width="stretch",
+        help="Opens Gmail in your browser, searched for recent mail about your active applications",
     )
 
 # --- Cover letters --------------------------------------------------------- #
