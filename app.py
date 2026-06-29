@@ -165,6 +165,20 @@ m3.metric(
 m4.metric("🆕 To action", len(to_action))
 m5.metric("Applied this week", _applied_recently(df["date_applied"]))
 
+# --- Screening-CV queue banner (persistent) ------------------------------- #
+# Roles set to Draft CV are a queue only — the app writes nothing; Claude drafts
+# them (ADR-008). Surface the queue and the exact prompt to copy into Cowork.
+_cv_queued = df[df["status"].isin(["Draft CV", "Draft CV & Cover Letter"])]
+if not _cv_queued.empty:
+    with st.container(border=True):
+        st.markdown(f"#### 🤖 {len(_cv_queued)} role(s) queued for a screening CV")
+        st.caption(
+            "Set to **Draft CV** but not yet written — the app queues, Claude drafts. "
+            "Copy the prompt below into Claude (Cowork); it reads each job description and "
+            "writes the optimised screening CV, then settles the role to **CV Drafted**."
+        )
+        st.code("draft the queued screening CVs", language=None)
+
 # --- To action: found, not yet applied or passed -------------------------- #
 if not to_action.empty:
     _ta_status_opts = list(dict.fromkeys([*db.STATUSES, *sorted(df["status"].dropna().unique())]))
