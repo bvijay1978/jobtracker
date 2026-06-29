@@ -95,12 +95,48 @@ def load_profile(profile_path: Path | str | None = None) -> dict:
     return json.loads(Path(profile_path).read_text(encoding="utf-8"))
 
 
+# Detects the role's sector from its title / fit-notes / company so the builder
+# can lead with the most relevant profile and competencies — a rule-based,
+# offline first cut (deeper JD-tailoring is an agent task; see docs/ARCHITECTURE).
+SECTOR_PATTERNS = {
+    "fs": r"financ|\bbank|payment|settlement|\bfx\b|insuranc|underwrit|wealth|"
+          r"trading|fintech|regulator|\bfca\b|\bfsa\b|capital market|broking",
+    "ai": r"\bai\b|artificial intelligence|machine learning|\bml\b|data science|"
+          r"\bnhs\b|clinical|governance|\bgenai\b|\bllm\b|cognitive",
+    "public": r"public sector|\bgov\b|government|council|civil service|"
+              r"local authorit|ministr|department for",
+}
+
+
+def detect_sector(role: dict) -> str:
+    text = " ".join(str(role.get(k, "")) for k in ("title", "fit_notes", "company")).lower()
+    for sector, pattern in SECTOR_PATTERNS.items():
+        if re.search(pattern, text):
+            return sector
+    return "default"
+
+
+def resolve_profile(prof: dict, sector: str, max_competencies: int = 10) -> tuple[str, list]:
+    """Pick the sector's profile paragraph and order competencies (lead ones first)."""
+    profiles = prof.get("profiles")
+    if profiles:
+        profile_text = profiles.get(sector) or profiles.get("default") or ""
+    else:  # legacy single-profile format
+        profile_text = prof.get("profile", "")
+    base = list(prof.get("competencies", []))
+    lead = list((prof.get("leadCompetencies") or {}).get(sector, []))
+    ordered = lead + [c for c in base if c not in lead]
+    return profile_text, ordered[:max_competencies]
+
+
 def generate_cv(role: dict, profile_path=None, out_dir=None) -> Path:
     """Write a first-draft CV for ``role`` and return the saved path."""
     prof = load_profile(profile_path)
     out_dir = Path(out_dir) if out_dir else config.CV_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     title = (role.get("title") or "Role").strip()
+    sector = detect_sector(role)
+    profile_text, competencies = resolve_profile(prof, sector)
     path = out_dir / f"{prof.get('name', 'CV')} - {_safe(title)}.docx"
 
     doc = Document()
@@ -129,10 +165,10 @@ def generate_cv(role: dict, profile_path=None, out_dir=None) -> Path:
     _heading(doc, "Profile")
     p = doc.add_paragraph()
     p.paragraph_format.space_after = Pt(4)
-    _set(p.add_run(prof.get("profile", "")), 10, MID)
+    _set(p.add_run(profile_text), 10, MID)
 
     _heading(doc, "Core Competencies")
-    comps = prof.get("competencies", [])
+    comps = competencies
     half = (len(comps) + 1) // 2
     left, right = comps[:half], comps[half:]
     table = doc.add_table(rows=max(len(left), len(right), 1), cols=2)

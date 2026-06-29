@@ -1,19 +1,30 @@
 {
   "name": "Your Name",
   "contact": "City  |  you@example.com  |  linkedin.com/in/you",
-  "profile": "One- or two-sentence professional summary, echoing the language of the roles you target.",
+
+  "_comment": "The builder picks a profile + lead competencies by detecting the role's sector from its title/fit-notes. Provide a 'default' plus any of 'fs' (finance/banking/insurance), 'ai' (AI/data/governance), 'public' (public sector). If you only want one CV style, just provide 'default' (or a legacy single 'profile' string).",
+
+  "profiles": {
+    "default": "One- or two-sentence summary, balanced across your strengths.",
+    "fs": "Summary that leads with your financial-services / regulated experience.",
+    "ai": "Summary that leads with your AI / data / governance experience.",
+    "public": "Summary that leads with your public-sector / transformation experience."
+  },
+  "leadCompetencies": {
+    "fs": ["FS skill one", "FS skill two", "FS skill three"],
+    "ai": ["AI skill one", "AI skill two", "AI skill three"],
+    "public": ["Public-sector skill one", "Public-sector skill two", "Public-sector skill three"]
+  },
   "competencies": [
-    "Skill one", "Skill two", "Skill three", "Skill four", "Skill five", "Skill six"
+    "General skill one", "General skill two", "General skill three",
+    "General skill four", "General skill five", "General skill six"
   ],
   "jobs": [
     {
       "title": "Most Recent Job Title",
       "company": "Company",
       "dates": "2022 – Present",
-      "bullets": [
-        "Achievement bullet with a concrete metric.",
-        "Second achievement bullet."
-      ]
+      "bullets": ["Achievement bullet with a metric.", "Second achievement bullet."]
     },
     {
       "title": "Previous Job Title",
@@ -22,10 +33,7 @@
       "bullets": ["Achievement bullet."]
     }
   ],
-  "achievements": [
-    "Headline achievement with a number.",
-    "Another standout result."
-  ],
+  "achievements": ["Headline achievement with a number.", "Another standout result."],
   "certifications": "Certification one  |  Certification two",
   "education": "Degree, Institution"
 }

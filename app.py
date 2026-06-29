@@ -101,13 +101,13 @@ DRAFT_CV_CL = "Draft CV & Cover Letter"
 def persist_status_changes(edited: pd.DataFrame) -> dict:
     """Apply To-action status edits.
 
-    The two action statuses draft documents on save and then settle the role to
-    'CV Drafted' (so a later save doesn't redraft):
-      - 'Draft CV'                 -> generate a CV
-      - 'Draft CV & Cover Letter'  -> generate a CV and a cover letter
-    All other status changes are written through as-is.
+    'Draft CV' / 'Draft CV & Cover Letter' are a *queue only* — the app writes no
+    document (it has no LLM and can't read the job description). Claude later reads
+    each queued role's JD and writes the optimised screening CV, then settles the
+    role to 'CV Drafted' (see screening_queue.py and ADR-008). All status changes
+    are written through as-is.
     """
-    result = {"updated": 0, "cv": 0, "cl": 0, "errors": []}
+    result = {"updated": 0, "queued": 0, "errors": []}
     with db.connect() as conn:
         originals = {r["id"]: dict(r) for r in db.fetch_all(conn)}
         for _, row in edited.iterrows():
@@ -119,28 +119,10 @@ def persist_status_changes(edited: pd.DataFrame) -> dict:
             if orig is None or _norm(orig.get("status")) == (_norm(row.get("status")) or "Found"):
                 continue
             new_status = _norm(row.get("status")) or "Found"
-
+            db.update_job(conn, rid, {"status": new_status})
             if new_status in (DRAFT_CV, DRAFT_CV_CL):
-                data = {"status": "CV Drafted"}
-                try:
-                    import cv_builder
-
-                    data["cv_version"] = cv_builder.generate_cv(orig).name
-                    result["cv"] += 1
-                except Exception as exc:  # noqa: BLE001 - surface to the user
-                    result["errors"].append(f"#{rid} CV: {exc}")
-                    continue  # leave status unchanged if drafting failed
-                if new_status == DRAFT_CV_CL:
-                    try:
-                        import cover_letter
-
-                        data["cover_letter"] = cover_letter.generate_cover_letter(orig).name
-                        result["cl"] += 1
-                    except Exception as exc:  # noqa: BLE001
-                        result["errors"].append(f"#{rid} cover letter: {exc}")
-                db.update_job(conn, rid, data)
+                result["queued"] += 1
             else:
-                db.update_job(conn, rid, {"status": new_status})
                 result["updated"] += 1
         conn.commit()
     return result
@@ -189,8 +171,9 @@ if not to_action.empty:
     with st.container(border=True):
         st.markdown(f"#### 🆕 To action — {len(to_action)} role(s) not yet applied to or passed")
         st.caption(
-            "Set a **Status** (Applied, Pass, …) and click **Save actions** — the role then "
-            "drops off this queue. Other details can be filled in the main grid below."
+            "Set a **Status** and click **Save actions**. Choosing **Draft CV** *queues* "
+            "the role — Claude later reads its job description and writes an optimised "
+            "screening CV. Applied / Pass / … drop the role off this queue."
         )
         ta_edited = st.data_editor(
             to_action[[
@@ -230,11 +213,15 @@ if not to_action.empty:
             parts = []
             if res["updated"]:
                 parts.append(f"{res['updated']} status update(s)")
-            if res["cv"]:
-                parts.append(f"{res['cv']} CV(s) drafted")
-            if res["cl"]:
-                parts.append(f"{res['cl']} cover letter(s) drafted")
+            if res["queued"]:
+                parts.append(f"{res['queued']} role(s) queued for CV drafting")
             st.success("Saved — " + (", ".join(parts) if parts else "no changes") + ".")
+            if res["queued"]:
+                st.info(
+                    "🤖 Queued for a screening CV — ask Claude in Cowork to "
+                    "“draft the queued screening CVs”. It reads each job description "
+                    "and writes the optimised draft (you review before sending)."
+                )
             for err in res["errors"]:
                 st.warning(err)
             if not res["errors"]:
