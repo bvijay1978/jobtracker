@@ -31,6 +31,10 @@ FIELDS = [
     "outcome",
 ]
 
+# App-managed columns — set by the app/agent (follow-ups, archive), never by the
+# CSV/xlsx importers, so they are kept out of the importable FIELDS above.
+APP_COLUMNS = ("contact_email", "follow_up", "follow_up_status", "archived")
+
 # Canonical pipeline statuses. "etc." in the brief — kept open via free text in
 # the UI, but these drive ordering, metrics and the default dropdown.
 # "Draft CV" / "Draft CV & Cover Letter" are one-shot action triggers: setting one
@@ -57,6 +61,10 @@ CREATE TABLE IF NOT EXISTS jobs (
     cover_letter  TEXT,
     date_applied  TEXT,
     outcome       TEXT,
+    contact_email TEXT,                        -- recruiter contact (Reed applications page)
+    follow_up     INTEGER NOT NULL DEFAULT 0,  -- 1 = flagged for a follow-up email
+    follow_up_status TEXT,                     -- '', 'Draft ready', 'Sent'
+    archived      INTEGER NOT NULL DEFAULT 0,  -- 1 = 'Ended'/closed -> Archive
     source_job_id TEXT,                       -- numeric job-id parsed from the link, for dedupe
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
@@ -90,13 +98,19 @@ def init_db(db_path: Path | str = DB_PATH) -> None:
 def _ensure_columns(conn: sqlite3.Connection) -> None:
     """Add columns introduced after a database was first created (idempotent)."""
     existing = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
-    for column, ddl in (("cover_letter", "TEXT"),):
+    for column, ddl in (
+        ("cover_letter", "TEXT"),
+        ("contact_email", "TEXT"),
+        ("follow_up", "INTEGER NOT NULL DEFAULT 0"),
+        ("follow_up_status", "TEXT"),
+        ("archived", "INTEGER NOT NULL DEFAULT 0"),
+    ):
         if column not in existing:
             conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {ddl}")
 
 
 def insert_job(conn: sqlite3.Connection, data: dict[str, Any]) -> int:
-    cols = [c for c in (*FIELDS, "source_job_id") if c in data]
+    cols = [c for c in (*FIELDS, "source_job_id", *APP_COLUMNS) if c in data]
     placeholders = ", ".join("?" for _ in cols)
     sql = f"INSERT INTO jobs ({', '.join(cols)}) VALUES ({placeholders})"
     cur = conn.execute(sql, [data.get(c) for c in cols])
@@ -104,7 +118,7 @@ def insert_job(conn: sqlite3.Connection, data: dict[str, Any]) -> int:
 
 
 def update_job(conn: sqlite3.Connection, job_id: int, data: dict[str, Any]) -> None:
-    cols = [c for c in (*FIELDS, "source_job_id") if c in data]
+    cols = [c for c in (*FIELDS, "source_job_id", *APP_COLUMNS) if c in data]
     if not cols:
         return
     assignments = ", ".join(f"{c} = ?" for c in cols)

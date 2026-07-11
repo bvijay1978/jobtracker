@@ -30,8 +30,9 @@ def load_df() -> pd.DataFrame:
     db.init_db()
     with db.connect() as conn:
         rows = [dict(r) for r in db.fetch_all(conn)]
-    df = pd.DataFrame(rows, columns=[*DISPLAY_COLS, "source_job_id", "created_at", "updated_at"])
-    return df[DISPLAY_COLS].copy()
+    cols = [*DISPLAY_COLS, *db.APP_COLUMNS]
+    df = pd.DataFrame(rows, columns=[*cols, "source_job_id", "created_at", "updated_at"])
+    return df[cols].copy()
 
 
 def refresh() -> None:
@@ -133,6 +134,13 @@ def persist_status_changes(edited: pd.DataFrame) -> dict:
 # --------------------------------------------------------------------------- #
 df = load_df()
 
+# Archived roles ("Ended"/closed) drop out of every active view below and live in
+# the 📦 Archive section — still searchable if a recruiter calls about a closed role.
+_all_df = df
+_arch_mask = df["archived"].fillna(0).astype(int) == 1
+archived_df = df[_arch_mask].sort_values("date_found", ascending=False, na_position="last")
+df = df[~_arch_mask].copy()
+
 st.title("🎯 Job Application Tracker")
 st.caption("Local SQLite + Streamlit · your job applications, tracked on your machine")
 
@@ -156,7 +164,8 @@ to_action = df[~df["status"].isin(ACTIONED_STATUSES)].sort_values(
 )
 
 m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Total roles", len(df))
+m1.metric("Active roles", len(df),
+          help=f"{len(archived_df)} archived (Ended) — see the Archive section")
 m2.metric("Applied", int((df["status"] == "Applied").sum()))
 m3.metric(
     "Shortlisted / Interview",
@@ -345,7 +354,7 @@ column_config = {
 }
 
 edited = st.data_editor(
-    view,
+    view[DISPLAY_COLS],
     column_config=column_config,
     column_order=DISPLAY_COLS,
     num_rows="dynamic",
@@ -381,8 +390,9 @@ with col_save:
 with col_export:
     st.download_button(
         "⬇️ Export CSV",
-        data=df.to_csv(index=False).encode("utf-8"),
+        data=_all_df.to_csv(index=False).encode("utf-8"),
         file_name=f"job_tracker_{today.isoformat()}.csv",
+        help="Full export, including archived roles.",
         mime="text/csv",
         width="stretch",
     )
@@ -395,6 +405,46 @@ with col_gmail:
             "opens a search — it does not read your inbox or change the tracker."
         ),
     )
+
+# --- Archive --------------------------------------------------------------- #
+st.divider()
+with st.expander(f"📦 Archive — {len(archived_df)} ended / closed role(s)", expanded=False):
+    st.caption(
+        "Roles whose vacancy has **ended** (closed). They're off your active lists, "
+        "but kept here — searchable if a recruiter follows up on a closed role. "
+        "Un-archive any that come back to life."
+    )
+    if archived_df.empty:
+        st.write("Nothing archived yet.")
+    else:
+        a_search = st.text_input("Search the archive", "", key="arch_search")
+        a_view = archived_df
+        if a_search.strip():
+            q = a_search.strip().lower()
+            hay = (a_view["title"].fillna("").str.lower() + " "
+                   + a_view["company"].fillna("").str.lower())
+            a_view = a_view[hay.str.contains(q, regex=False)]
+        st.dataframe(
+            a_view[["id", "date_found", "title", "company", "status", "contact_email", "link"]],
+            column_config={
+                "link": st.column_config.LinkColumn("Link", display_text="open", width="small"),
+                "contact_email": st.column_config.TextColumn("Recruiter contact", width="medium"),
+            },
+            hide_index=True,
+            width="stretch",
+        )
+        unarch = {f"{int(r['id'])} · {r['title']} — {r['company']}": int(r["id"])
+                  for _, r in a_view.iterrows()}
+        if unarch:
+            uc1, uc2 = st.columns([3, 1])
+            pick = uc1.selectbox("Un-archive", list(unarch), key="unarch_pick",
+                                 label_visibility="collapsed")
+            if uc2.button("♻️ Un-archive", width="stretch"):
+                with db.connect() as conn:
+                    db.update_job(conn, unarch[pick], {"archived": 0})
+                    conn.commit()
+                refresh()
+                st.rerun()
 
 # --- Cover letters --------------------------------------------------------- #
 st.divider()
