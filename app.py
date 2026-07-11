@@ -188,6 +188,40 @@ if not _cv_queued.empty:
         )
         st.code("draft the queued screening CVs", language=None)
 
+# --- Contact-resolver queue ("Needs a contact") --------------------------- #
+# A follow-up email needs a recruiter address. Live roles (Applied+) with no
+# contact_email are queued here; the app can't reach Gmail/web/LinkedIn (ADR-002),
+# so Claude resolves a *verified* address (inbox → LinkedIn → company site, never
+# a guess) and files it via contact_queue.record_contact. Roles resolved to 'none'
+# (no reachable email) drop out so the queue doesn't nag.
+_needs_contact = df[
+    df["status"].isin(["Applied", "Shortlisted", "Interview", "Offer"])
+    & (df["contact_email"].fillna("").astype(str).str.strip() == "")
+    & (df["contact_source"].fillna("").astype(str).str.strip() != "none")
+]
+if not _needs_contact.empty:
+    with st.container(border=True):
+        st.markdown(f"#### 📇 {len(_needs_contact)} live role(s) need a recruiter contact")
+        st.caption(
+            "Live applications with no recruiter email yet — needed before a follow-up "
+            "can be drafted. The app can't reach Gmail or the web; copy the prompt into "
+            "Claude (Cowork) and it resolves a **verified** address "
+            "(your inbox → LinkedIn → company site), never a guess."
+        )
+        st.code("resolve contacts for the follow-up queue", language=None)
+        with st.expander(f"Show the {len(_needs_contact)} role(s)", expanded=False):
+            st.dataframe(
+                _needs_contact[["id", "date_applied", "title", "company", "status", "link"]],
+                column_config={
+                    "date_applied": st.column_config.TextColumn("Applied", width="small"),
+                    "link": st.column_config.LinkColumn(
+                        "Link", display_text="open", width="small",
+                    ),
+                },
+                hide_index=True,
+                width="stretch",
+            )
+
 # --- To action: found, not yet applied or passed -------------------------- #
 if not to_action.empty:
     _ta_status_opts = list(dict.fromkeys([*db.STATUSES, *sorted(df["status"].dropna().unique())]))
