@@ -5,6 +5,23 @@ A small, local-first job-application tracker — **SQLite** for storage, a
 sent, where the application stands, and what happened next. Everything runs on
 your machine; no accounts, no cloud, no data leaves your computer.
 
+## Who this is for & what you need
+
+This is a personal, local-first **starting point, not a one-click app** — a working
+base you run and adapt. The easiest way to get going is to **point Claude Code at
+this repo and ask it to set you up**; it'll handle the virtual environment,
+dependencies and config.
+
+- **To run the tracker itself:** Python 3 and a terminal (see [Quickstart](#quickstart)).
+  It's a standalone local web app — your data stays on your machine.
+- **To use the AI parts** (sweeping job boards, scoring fit, drafting tailored
+  CVs/cover letters): Claude with the
+  [job-hunt skill](examples/generate-job-hunt-skill.md) and the "Claude in Chrome"
+  extension. The app and the agent are deliberately decoupled — see
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for why.
+- **Bring your own profile:** copy `profile.example.json` to `profile.json`
+  (git-ignored) — that's the only place your personal details live.
+
 ## Features
 
 - 📊 **At-a-glance metrics** — totals by status, plus how many you applied to this week.
