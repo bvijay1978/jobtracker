@@ -33,7 +33,10 @@ FIELDS = [
 
 # App-managed columns — set by the app/agent (follow-ups, archive), never by the
 # CSV/xlsx importers, so they are kept out of the importable FIELDS above.
-APP_COLUMNS = ("contact_email", "contact_source", "follow_up", "follow_up_status", "archived")
+APP_COLUMNS = (
+    "contact_email", "contact_source", "follow_up", "follow_up_status",
+    "follow_up_draft", "archived",
+)
 
 # Canonical pipeline statuses. "etc." in the brief — kept open via free text in
 # the UI, but these drive ordering, metrics and the default dropdown.
@@ -63,8 +66,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     outcome       TEXT,
     contact_email TEXT,                        -- recruiter contact (Reed applications page)
     contact_source TEXT,                       -- provenance of contact_email (verified only)
-    follow_up     INTEGER NOT NULL DEFAULT 0,  -- 1 = flagged for a follow-up email
-    follow_up_status TEXT,                     -- '', 'Draft ready', 'Sent'
+    follow_up     INTEGER NOT NULL DEFAULT 0,  -- 0 default (ticked in UI) / 1 ticked / 2 opted out
+    follow_up_status TEXT,                     -- '', 'Draft ready', 'Sent <date>', or a note
+    follow_up_draft TEXT,                      -- link to the Gmail draft (user reviews & sends)
     archived      INTEGER NOT NULL DEFAULT 0,  -- 1 = 'Ended'/closed -> Archive
     source_job_id TEXT,                       -- numeric job-id parsed from the link, for dedupe
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -105,6 +109,7 @@ def _ensure_columns(conn: sqlite3.Connection) -> None:
         ("contact_source", "TEXT"),
         ("follow_up", "INTEGER NOT NULL DEFAULT 0"),
         ("follow_up_status", "TEXT"),
+        ("follow_up_draft", "TEXT"),
         ("archived", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in existing:

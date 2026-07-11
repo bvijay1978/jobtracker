@@ -14,6 +14,7 @@ import streamlit as st
 
 import config
 import db
+import followup_queue
 
 st.set_page_config(page_title="Job Application Tracker", page_icon="🎯", layout="wide")
 
@@ -154,6 +155,19 @@ def _applied_recently(s: pd.Series) -> int:
     return int(((dates >= week_ago) & (dates <= today)).sum())
 
 
+def _follow_up_due_mask(d: pd.DataFrame) -> pd.Series:
+    """Applied roles with a recruiter contact, ≥2 working days since applying,
+    follow-up not yet sent. The due rule itself lives in followup_queue so the
+    app and the agent can never disagree."""
+    return (
+        (d["status"] == "Applied")
+        & (d["contact_email"].fillna("").astype(str).str.strip() != "")
+        & ~d["follow_up_status"].fillna("").astype(str).str.strip()
+            .str.lower().str.startswith("sent")
+        & d["date_applied"].map(followup_queue.is_due)
+    )
+
+
 # "To action" = found but not yet applied to or passed — the work queue.
 ACTIONED_STATUSES = {
     "Applied", "Shortlisted", "Interview", "Offer", "Pass", "Rejected",
@@ -163,7 +177,7 @@ to_action = df[~df["status"].isin(ACTIONED_STATUSES)].sort_values(
     "date_found", ascending=False, na_position="last"
 )
 
-m1, m2, m3, m4, m5 = st.columns(5)
+m1, m2, m3, m4, m5, m6 = st.columns(6)
 m1.metric("Active roles", len(df),
           help=f"{len(archived_df)} archived (Ended) — see the Archive section")
 m2.metric("Applied", int((df["status"] == "Applied").sum()))
@@ -173,6 +187,16 @@ m3.metric(
 )
 m4.metric("🆕 To action", len(to_action))
 m5.metric("Applied this week", _applied_recently(df["date_applied"]))
+_fu_due = df[_follow_up_due_mask(df)].copy()
+m6.metric(
+    "📮 Follow-ups due",
+    int((_fu_due["follow_up"].fillna(0).astype(int) != 2).sum()),
+    help=(
+        "Applied roles with a recruiter contact where 2+ working days have "
+        "passed since applying, not yet sent or opted out — see the "
+        "Follow-ups section."
+    ),
+)
 
 # --- Screening-CV queue banner (persistent) ------------------------------- #
 # Roles set to Draft CV are a queue only — the app writes nothing; Claude drafts
@@ -221,6 +245,110 @@ if not _needs_contact.empty:
                 hide_index=True,
                 width="stretch",
             )
+
+# --- Follow-ups due -------------------------------------------------------- #
+# Applied roles with a verified contact, 2+ working days old, follow-up not yet
+# sent. Everything starts ticked (opt-out) — untick to skip, Save, then copy the
+# prompt. Claude sweeps Gmail for replies first (a reply beats a nudge), writes
+# a short contextual Gmail DRAFT per ticked role (it never sends), and files the
+# draft link here. You review and hit Send in Gmail, then mark the row sent.
+if not _fu_due.empty:
+    fu_df = _fu_due.copy()
+    fu_df["send"] = fu_df["follow_up"].fillna(0).astype(int) != 2
+    _fu_applied = pd.to_datetime(fu_df["date_applied"], errors="coerce").dt.date
+    fu_df["days"] = _fu_applied.map(lambda d_: (today - d_).days if pd.notna(d_) else None)
+    fu_df = fu_df.sort_values("date_applied", na_position="last")
+    _orig_send = dict(zip(fu_df["id"].astype(int), fu_df["send"]))
+
+    with st.container(border=True):
+        st.markdown(
+            f"#### 📮 Follow-ups due — {int(fu_df['send'].sum())} ticked of {len(fu_df)} due"
+        )
+        st.caption(
+            "Untick any role you'd rather not chase and **Save selections**. Then copy the "
+            "prompt into Claude (Cowork): it checks Gmail for replies first, writes a short "
+            "**draft** per ticked role (it never sends), and links each draft below. "
+            "Open the draft, edit, hit **Send** in Gmail — then mark it sent here."
+        )
+        fu_edited = st.data_editor(
+            fu_df[[
+                "send", "id", "days", "date_applied", "title", "company",
+                "contact_email", "contact_source", "follow_up_status", "follow_up_draft",
+            ]],
+            column_config={
+                "send": st.column_config.CheckboxColumn(
+                    "Send", help="Untick to skip this role", width="small",
+                ),
+                "id": st.column_config.NumberColumn("id", disabled=True, width="small"),
+                "days": st.column_config.NumberColumn(
+                    "Days", disabled=True, width="small",
+                    help="Days since you applied",
+                ),
+                "date_applied": st.column_config.TextColumn(
+                    "Applied", disabled=True, width="small",
+                ),
+                "title": st.column_config.TextColumn("Title", disabled=True, width="large"),
+                "company": st.column_config.TextColumn(
+                    "Company / Recruiter", disabled=True, width="medium",
+                ),
+                "contact_email": st.column_config.TextColumn(
+                    "Contact", disabled=True, width="medium",
+                ),
+                "contact_source": st.column_config.TextColumn(
+                    "Source", disabled=True, width="small",
+                    help="How the contact was verified — named-inbox / named-verified / "
+                         "dept-inbox (never guessed)",
+                ),
+                "follow_up_status": st.column_config.TextColumn(
+                    "Status", disabled=True, width="small",
+                ),
+                "follow_up_draft": st.column_config.LinkColumn(
+                    "Draft", display_text="open draft", disabled=True, width="small",
+                ),
+            },
+            num_rows="fixed",
+            hide_index=True,
+            width="stretch",
+            key="followup_grid",
+        )
+
+        fc1, fc2 = st.columns([1, 2.4])
+        with fc1:
+            if st.button("💾 Save selections", key="save_followups", width="stretch"):
+                changed = 0
+                with db.connect() as conn:
+                    for _, row in fu_edited.iterrows():
+                        rid = int(row["id"])
+                        new = bool(row["send"])
+                        if new != bool(_orig_send.get(rid)):
+                            db.update_job(conn, rid, {"follow_up": 1 if new else 2})
+                            changed += 1
+                    conn.commit()
+                refresh()
+                st.success(f"Saved — {changed} selection change(s).")
+                st.rerun()
+        with fc2:
+            st.code("draft the due follow-up emails", language=None)
+
+        _drafted = fu_df[
+            fu_df["follow_up_status"].fillna("").str.lower().str.startswith("draft")
+        ]
+        if not _drafted.empty:
+            sent_opts = {
+                f"{int(r['id'])} · {r['title']} — {r['company']}": int(r["id"])
+                for _, r in _drafted.iterrows()
+            }
+            sc1, sc2 = st.columns([3, 1])
+            sent_pick = sc1.selectbox(
+                "Mark a follow-up as sent", list(sent_opts),
+                key="fu_sent_pick", label_visibility="collapsed",
+            )
+            if sc2.button("✅ Mark sent", key="fu_mark_sent", width="stretch"):
+                with db.connect() as conn:
+                    followup_queue.mark_sent(conn, sent_opts[sent_pick])
+                    conn.commit()
+                refresh()
+                st.rerun()
 
 # --- To action: found, not yet applied or passed -------------------------- #
 if not to_action.empty:
