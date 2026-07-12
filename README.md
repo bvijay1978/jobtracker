@@ -1,5 +1,7 @@
 # Job Application Tracker
 
+_Replicated from [Iain Macaskill's jobtracker](https://github.com/iainmacaskill/jobtracker)._
+
 A small, local-first job-application tracker — **SQLite** for storage, a
 **Streamlit** UI for browsing and editing. Track every role you find, the CV you
 sent, where the application stands, and what happened next. Everything runs on
