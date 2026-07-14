@@ -7,6 +7,8 @@ Data lives in jobs.db (SQLite); see migrate.py for the initial import.
 from __future__ import annotations
 
 import datetime as dt
+import hmac
+import os
 from urllib.parse import quote
 
 import pandas as pd
@@ -18,6 +20,64 @@ import followup_queue
 
 st.set_page_config(page_title="Job Application Tracker", page_icon="🎯", layout="wide")
 
+# --------------------------------------------------------------------------- #
+# Auth (optional — only active for the shared Render deployment)
+# --------------------------------------------------------------------------- #
+# Local single-user runs never set these, so _require_login() returns None
+# immediately and the app behaves exactly as it always has.
+APP_PASSWORD = os.environ.get("APP_PASSWORD")
+APP_USERS = os.environ.get("APP_USERS", "")  # e.g. "Vijay:vijay,Radha:radha"
+
+
+def _parsed_users() -> dict[str, str]:
+    """{display name: slug} from APP_USERS."""
+    users: dict[str, str] = {}
+    for pair in APP_USERS.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        name, _, slug = pair.partition(":")
+        users[name.strip()] = (slug or name).strip().lower()
+    return users
+
+
+def _require_login() -> str | None:
+    """Gate the app behind a shared password, then (if configured) a 'who are
+    you' picker. Returns the selected user's slug — used to pick their
+    Postgres schema, profile file and CV/cover-letter folders — or None in
+    local single-user mode or single-password-no-picker mode.
+    """
+    if not APP_PASSWORD:
+        return None
+
+    if not st.session_state.get("authed"):
+        st.title("🎯 Job Application Tracker")
+        pw = st.text_input("Password", type="password")
+        if st.button("Log in"):
+            if hmac.compare_digest(pw, APP_PASSWORD):
+                st.session_state.authed = True
+                st.rerun()
+            else:
+                st.error("Wrong password.")
+        st.stop()
+
+    users = _parsed_users()
+    if not users:
+        return None
+
+    if not st.session_state.get("current_user"):
+        st.title("🎯 Job Application Tracker")
+        pick = st.selectbox("Who are you?", list(users))
+        if st.button("Continue"):
+            st.session_state.current_user = users[pick]
+            st.rerun()
+        st.stop()
+
+    return st.session_state.current_user
+
+
+current_user = _require_login()
+
 DISPLAY_COLS = ["id", *db.FIELDS]
 
 
@@ -27,9 +87,9 @@ DISPLAY_COLS = ["id", *db.FIELDS]
 # ttl keeps the view live: rows written by an external script (e.g. import_jobs)
 # surface within a few seconds on the next interaction/rerun.
 @st.cache_data(ttl=5)
-def load_df() -> pd.DataFrame:
-    db.init_db()
-    with db.connect() as conn:
+def load_df(user: str | None) -> pd.DataFrame:
+    db.init_db(schema=user)
+    with db.connect(schema=user) as conn:
         rows = [dict(r) for r in db.fetch_all(conn)]
     cols = [*DISPLAY_COLS, *db.APP_COLUMNS]
     df = pd.DataFrame(rows, columns=[*cols, "source_job_id", "created_at", "updated_at"])
@@ -50,10 +110,12 @@ def _norm(v) -> str | None:
     return s or None
 
 
-def persist_changes(edited: pd.DataFrame, shown_ids: set[int]) -> dict[str, int]:
+def persist_changes(
+    edited: pd.DataFrame, shown_ids: set[int], user: str | None
+) -> dict[str, int]:
     """Diff the edited grid against the DB and apply inserts/updates/deletes."""
     counts = {"added": 0, "updated": 0, "deleted": 0}
-    with db.connect() as conn:
+    with db.connect(schema=user) as conn:
         originals = {r["id"]: dict(r) for r in db.fetch_all(conn)}
         edited_ids: set[int] = set()
 
@@ -100,7 +162,7 @@ DRAFT_CV = "Draft CV"
 DRAFT_CV_CL = "Draft CV & Cover Letter"
 
 
-def persist_status_changes(edited: pd.DataFrame) -> dict:
+def persist_status_changes(edited: pd.DataFrame, user: str | None) -> dict:
     """Apply To-action status edits.
 
     'Draft CV' / 'Draft CV & Cover Letter' are a *queue only* — the app writes no
@@ -110,7 +172,7 @@ def persist_status_changes(edited: pd.DataFrame) -> dict:
     are written through as-is.
     """
     result = {"updated": 0, "queued": 0, "errors": []}
-    with db.connect() as conn:
+    with db.connect(schema=user) as conn:
         originals = {r["id"]: dict(r) for r in db.fetch_all(conn)}
         for _, row in edited.iterrows():
             rid = row.get("id")
@@ -133,7 +195,7 @@ def persist_status_changes(edited: pd.DataFrame) -> dict:
 # --------------------------------------------------------------------------- #
 # UI
 # --------------------------------------------------------------------------- #
-df = load_df()
+df = load_df(current_user)
 
 # Archived roles ("Ended"/closed) drop out of every active view below and live in
 # the 📦 Archive section — still searchable if a recruiter calls about a closed role.
@@ -316,7 +378,7 @@ if not _fu_due.empty:
         with fc1:
             if st.button("💾 Save selections", key="save_followups", width="stretch"):
                 changed = 0
-                with db.connect() as conn:
+                with db.connect(schema=current_user) as conn:
                     for _, row in fu_edited.iterrows():
                         rid = int(row["id"])
                         new = bool(row["send"])
@@ -344,7 +406,7 @@ if not _fu_due.empty:
                 key="fu_sent_pick", label_visibility="collapsed",
             )
             if sc2.button("✅ Mark sent", key="fu_mark_sent", width="stretch"):
-                with db.connect() as conn:
+                with db.connect(schema=current_user) as conn:
                     followup_queue.mark_sent(conn, sent_opts[sent_pick])
                     conn.commit()
                 refresh()
@@ -393,7 +455,7 @@ if not to_action.empty:
             key="to_action_grid",
         )
         if st.button("✅ Save actions", type="primary", key="save_to_action"):
-            res = persist_status_changes(ta_edited)
+            res = persist_status_changes(ta_edited, current_user)
             refresh()
             parts = []
             if res["updated"]:
@@ -425,7 +487,7 @@ with st.sidebar:
                  help="Pull new roles from the external database set in JOBTRACKER_IMPORT_DB"):
         import import_jobs
 
-        result = import_jobs.import_jobs()
+        result = import_jobs.import_jobs(schema=current_user)
         refresh()
         if not result["source_exists"]:
             st.warning(
@@ -542,7 +604,7 @@ gmail_url = "https://mail.google.com/mail/u/0/#search/" + quote(_query)
 col_save, col_export, col_gmail, _ = st.columns([1, 1, 1.4, 2.6])
 with col_save:
     if st.button("💾 Save changes", type="primary", width="stretch"):
-        result = persist_changes(edited, shown_ids)
+        result = persist_changes(edited, shown_ids, current_user)
         refresh()
         st.success(
             f"Saved · {result['added']} added, {result['updated']} updated, "
@@ -602,7 +664,7 @@ with st.expander(f"📦 Archive — {len(archived_df)} ended / closed role(s)", 
             pick = uc1.selectbox("Un-archive", list(unarch), key="unarch_pick",
                                  label_visibility="collapsed")
             if uc2.button("♻️ Un-archive", width="stretch"):
-                with db.connect() as conn:
+                with db.connect(schema=current_user) as conn:
                     db.update_job(conn, unarch[pick], {"archived": 0})
                     conn.commit()
                 refresh()
@@ -625,16 +687,28 @@ else:
     if cl_btn.button("✍️ Generate cover letter", width="stretch"):
         import cover_letter
 
-        with db.connect() as conn:
+        with db.connect(schema=current_user) as conn:
             row = conn.execute("SELECT * FROM jobs WHERE id = ?", (role_map[chosen],)).fetchone()
-            path = cover_letter.generate_cover_letter(dict(row))
+            path = cover_letter.generate_cover_letter(
+                dict(row), out_dir=config.cover_letter_dir_for(current_user)
+            )
             db.update_job(conn, role_map[chosen], {"cover_letter": path.name})
             conn.commit()
         refresh()
-        st.success(f"Draft saved → {path}")
+        # Stash the bytes now — the rerun below re-executes the whole script, so
+        # a download_button placed only inside this `if` would vanish immediately.
+        st.session_state["last_cover_letter"] = (path.name, path.read_bytes())
         st.rerun()
+
+    if st.session_state.get("last_cover_letter"):
+        cl_name, cl_bytes = st.session_state["last_cover_letter"]
+        st.success(f"Draft saved — {cl_name}")
+        st.download_button(
+            "⬇️ Download cover letter", data=cl_bytes, file_name=cl_name, key="dl_cover_letter",
+        )
+
     st.caption(
-        f"Drafts are saved to `{config.COVER_LETTER_DIR}` and the filename is "
+        "Drafts are saved to your cover-letters folder and the filename is "
         "recorded in the **Cover letter** column. It's a starting draft — finish "
         "the bracketed parts, or ask Claude for a fully tailored version."
     )

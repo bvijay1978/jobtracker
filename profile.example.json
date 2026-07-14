@@ -35,5 +35,6 @@
   ],
   "achievements": ["Headline achievement with a number.", "Another standout result."],
   "certifications": "Certification one  |  Certification two",
-  "education": "Degree, Institution"
+  "education": "Degree, Institution",
+  "rightToWork": "Optional — e.g. 'Full right to work in Australia.' Omit to leave it off the CV."
 }

@@ -24,8 +24,13 @@ from normalize import norm_status, parse_job_id, tc_key
 
 
 def import_jobs(source_db: Path | str | None = None,
-                target_db: Path | str | None = None) -> dict:
-    """Insert new roles from ``source_db`` into ``target_db``. Returns a summary."""
+                target_db: Path | str | None = None,
+                schema: str | None = None) -> dict:
+    """Insert new roles from ``source_db`` into ``target_db``. Returns a summary.
+
+    ``schema`` selects which user's data to import into when running against
+    the optional Postgres deployment (see db.py); ignored for SQLite.
+    """
     source_db = Path(source_db) if source_db else config.IMPORT_DB_PATH
     target_db = target_db if target_db is not None else db.DB_PATH
 
@@ -44,8 +49,8 @@ def import_jobs(source_db: Path | str | None = None,
     src.close()
     summary["source_rows"] = len(source_rows)
 
-    db.init_db(target_db)
-    with db.connect(target_db) as conn:
+    db.init_db(target_db, schema)
+    with db.connect(target_db, schema=schema) as conn:
         existing = db.fetch_all(conn)
         seen_ids = {r["source_job_id"] for r in existing if r["source_job_id"]}
         seen_tc = {tc_key(r["title"], r["company"]) for r in existing}

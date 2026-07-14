@@ -1,3 +1,5 @@
+import pytest
+
 import db
 import seed
 
@@ -59,3 +61,30 @@ def test_seed_loads_sample_csv(tmp_path):
             "SELECT COUNT(*) FROM jobs WHERE source_job_id IS NOT NULL"
         ).fetchone()[0]
     assert with_ids == 8
+
+
+# --- Postgres-adapter helpers (pure logic — no real Postgres needed) ------- #
+# The optional Render deployment (ADR-011) picks a Postgres backend purely via
+# DATABASE_URL; these two functions are the only bits of that path that don't
+# need a live connection to exercise.
+
+def test_safe_schema_accepts_valid_names():
+    assert db._safe_schema("vijay") == "vijay"
+    assert db._safe_schema("radha_2") == "radha_2"
+    assert db._safe_schema(None) == "public"  # no schema -> public
+
+
+@pytest.mark.parametrize("bad", ["bad; drop table jobs;", "Vijay Sinha", "", "a b", "a-b"])
+def test_safe_schema_rejects_unsafe_names(bad):
+    if bad == "":
+        assert db._safe_schema(bad) == "public"  # blank -> falls back to public
+        return
+    with pytest.raises(ValueError):
+        db._safe_schema(bad)
+
+
+def test_pg_sql_translates_placeholders():
+    assert db._pg_sql("SELECT * FROM jobs WHERE id = ?") == "SELECT * FROM jobs WHERE id = %s"
+    assert db._pg_sql("UPDATE jobs SET a = ?, b = ? WHERE id = ?") == (
+        "UPDATE jobs SET a = %s, b = %s WHERE id = %s"
+    )

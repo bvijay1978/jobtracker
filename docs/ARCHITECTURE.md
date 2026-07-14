@@ -228,4 +228,62 @@ human-in-the-loop preference.
 
 ---
 
+### ADR-011 — Optional shared deployment: Postgres, schema-per-user, shared password
+
+**Context.** ADR-001 chose local-first/single-user for privacy and zero setup.
+That still holds as the default, but the user also wants to run one hosted
+instance (Render) so he and his wife can each use the tracker from anywhere,
+with fully separate roles — not a shared board. Render's free web services
+have ephemeral local disk, so the SQLite file used locally can't survive a
+restart/redeploy there.
+
+**Decision.**
+
+- **Storage.** Add an optional Postgres backend to `db.py`, selected purely by
+  the presence of `DATABASE_URL` — unset (the default), the app is byte-for-
+  byte the same local SQLite app as before. A `_PgConnAdapter` translates `?`
+  placeholders to `%s` and matches the `sqlite3.Connection` surface
+  (`.execute()`, dict-like rows via `RealDictCursor`) so every existing query
+  in `db.py`, `app.py` and the three agent-queue modules works completely
+  unmodified either way.
+- **Per-user separation: Postgres schema, not an `owner` column.** Each
+  person's data lives in its own Postgres *schema* (`vijay`, `radha`), set via
+  `SET search_path` right after connecting. Every unqualified `jobs` query then
+  transparently resolves to the right person's table. Rejected: an `owner`
+  column with a `WHERE owner = ?` filter threaded through every query and every
+  agent-queue function — more invasive, and one missed filter anywhere leaks
+  one person's applications into the other's view. Also rejected: a fully
+  separate Postgres *database* per person — Render bills per database
+  instance, so this would double hosting cost for no isolation benefit over
+  schemas.
+- **Auth: one shared password, not individual accounts.** A single
+  `APP_PASSWORD` gates the app; once through, an `APP_USERS` picker
+  (`Vijay:vijay,Radha:radha`) sets the session's active schema/profile. This
+  was an explicit choice over per-person logins — the two users trust each
+  other completely, so the picker only needs to keep the *data* separate, not
+  defend against the other person impersonating you.
+- **Per-user CVs.** `profile.<slug>.json` and `cvs/<slug>/` /
+  `cover_letters/<slug>/` output folders, resolved by `config.profile_path_for`
+  / `cv_dir_for` / `cover_letter_dir_for`. The CV/cover-letter generators
+  already accepted optional path overrides (ADR-007/008/009), so no changes
+  were needed there — only the callers pass the per-user path.
+- **The in-app cover-letter button needed a download button it never had.**
+  Every other document-producing workflow (screening CV, interview CV) is
+  agent-side (ADR-002/008/009) — Claude runs locally on each person's own
+  machine and writes the file to their own disk, so they already have it. The
+  one exception is the "✍️ Generate cover letter" button, which runs *inside*
+  the Streamlit process itself. Locally that was fine (the user's own
+  filesystem); hosted on Render, the user has no way to reach the container's
+  disk at all, and Render doesn't guarantee that disk survives anyway — so
+  this button now also offers the generated file straight back as a
+  `st.download_button`.
+
+**Consequences.** Local single-user setup is completely unaffected — this is
+all opt-in behind `DATABASE_URL`/`APP_PASSWORD`/`APP_USERS`. The hosted path
+trades a small amount of complexity in `db.py` (a connection adapter, two DDL
+dialects) for reusing 100% of the existing query and agent-queue logic
+unchanged. See [docs/DEPLOY_RENDER.md](DEPLOY_RENDER.md) for the deploy steps.
+
+---
+
 *Add new decisions as `ADR-NNN` records above this line, newest last.*

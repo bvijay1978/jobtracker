@@ -206,8 +206,9 @@ def generate_cv(role: dict, profile_path=None, out_dir=None) -> Path:
     if prof.get("education"):
         _set(doc.add_paragraph().add_run(prof["education"]), 10, MID)
 
-    _heading(doc, "Additional")
-    _set(doc.add_paragraph().add_run("Full right to work in the UK."), 10, MID)
+    if prof.get("rightToWork"):
+        _heading(doc, "Additional")
+        _set(doc.add_paragraph().add_run(prof["rightToWork"]), 10, MID)
 
     doc.save(str(path))
     return path

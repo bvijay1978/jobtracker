@@ -86,6 +86,8 @@ def render_html(role: dict, profile: dict, screening: dict | None = None) -> str
     ach_block = (
         f'<section><h2>Key Achievements</h2><ul class="ach">{ach}</ul></section>' if ach else ""
     )
+    rtw = profile.get("rightToWork")
+    rtw_block = f'<div class="foot"><b>Right to work:</b> {_e(rtw)}</div>' if rtw else ""
 
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <style>
@@ -135,7 +137,7 @@ def render_html(role: dict, profile: dict, screening: dict | None = None) -> str
   <section><h2>Certifications &amp; Education</h2>
     <div class="foot"><b>Certifications:</b> {_e(profile.get('certifications'))}</div>
     <div class="foot"><b>Education:</b> {_e(profile.get('education'))}</div>
-    <div class="foot"><b>Right to work:</b> Full right to work in the UK.</div>
+    {rtw_block}
   </section>
 </body></html>"""
 

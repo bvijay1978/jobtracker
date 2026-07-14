@@ -45,3 +45,20 @@ CV_DIR = _path_env("JOBTRACKER_CV_DIR", PROJECT_ROOT / "cvs")
 # Profile data the in-app CV builder reads (kept out of the repo — copy
 # profile.example.json to profile.json and fill it in).
 PROFILE_PATH = _path_env("JOBTRACKER_PROFILE", PROJECT_ROOT / "profile.json")
+
+
+# --- Per-user paths (optional shared/Render deployment only) --------------- #
+# When the app runs in multi-user mode (APP_USERS set — see app.py), each
+# person gets their own profile file and CV/cover-letter output folders,
+# named by their slug. Local single-user mode never calls these — PROFILE_PATH
+# / CV_DIR / COVER_LETTER_DIR above keep working exactly as before.
+def profile_path_for(user: str | None) -> Path:
+    return PROFILE_PATH if not user else PROJECT_ROOT / f"profile.{user}.json"
+
+
+def cv_dir_for(user: str | None) -> Path:
+    return CV_DIR if not user else CV_DIR / user
+
+
+def cover_letter_dir_for(user: str | None) -> Path:
+    return COVER_LETTER_DIR if not user else COVER_LETTER_DIR / user
