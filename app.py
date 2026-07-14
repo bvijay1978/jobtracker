@@ -694,7 +694,9 @@ else:
         with db.connect(schema=current_user) as conn:
             row = conn.execute("SELECT * FROM jobs WHERE id = ?", (role_map[chosen],)).fetchone()
             path = cover_letter.generate_cover_letter(
-                dict(row), out_dir=config.cover_letter_dir_for(current_user)
+                dict(row),
+                out_dir=config.cover_letter_dir_for(current_user),
+                profile_path=config.profile_path_for(current_user),
             )
             db.update_job(conn, role_map[chosen], {"cover_letter": path.name})
             conn.commit()
