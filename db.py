@@ -95,6 +95,27 @@ CREATE TABLE IF NOT EXISTS jobs (
 -- Helps importers avoid re-inserting roles already logged.
 CREATE INDEX IF NOT EXISTS idx_jobs_source_job_id ON jobs(source_job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+-- A general document library (resumes, cover letters, certificates, ...),
+-- stored in the database so it survives restarts/redeploys on the hosted
+-- deployment the same way jobs does (ADR-014). role_id optionally links a
+-- document to the role it was written for/against; tags are free-text,
+-- comma-separated, so a CV drafted for one role can be found and reused for
+-- similar ones later.
+CREATE TABLE IF NOT EXISTS documents (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT NOT NULL,
+    category      TEXT,
+    tags          TEXT,
+    role_id       INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    filename      TEXT NOT NULL,
+    mime_type     TEXT,
+    size_bytes    INTEGER NOT NULL,
+    data          BLOB NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_role_id ON documents(role_id);
 """
 
 # Same shape as SCHEMA, in Postgres dialect (SERIAL instead of AUTOINCREMENT,
@@ -130,6 +151,21 @@ CREATE TABLE IF NOT EXISTS jobs (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_source_job_id ON jobs(source_job_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
+
+CREATE TABLE IF NOT EXISTS documents (
+    id            SERIAL PRIMARY KEY,
+    name          TEXT NOT NULL,
+    category      TEXT,
+    tags          TEXT,
+    role_id       INTEGER REFERENCES jobs(id) ON DELETE SET NULL,
+    filename      TEXT NOT NULL,
+    mime_type     TEXT,
+    size_bytes    INTEGER NOT NULL,
+    data          BYTEA NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (NOW()::TEXT)
+);
+
+CREATE INDEX IF NOT EXISTS idx_documents_role_id ON documents(role_id);
 """
 
 _SCHEMA_NAME_RE = re.compile(r"^[a-z0-9_]+$")
@@ -310,3 +346,52 @@ def upsert_job(conn, data: dict[str, Any]) -> tuple[int, str]:
             update_job(conn, existing["id"], data)
             return int(existing["id"]), "updated"
     return insert_job(conn, data), "inserted"
+
+
+# --------------------------------------------------------------------------- #
+# Documents — a general library (resumes, cover letters, certificates, ...).
+# See documents.py for the higher-level save() helper used by the app.
+# --------------------------------------------------------------------------- #
+DOCUMENT_FIELDS = [
+    "name", "category", "tags", "role_id", "filename", "mime_type", "size_bytes", "data",
+]
+
+
+def insert_document(conn, data: dict[str, Any]) -> int:
+    cols = [c for c in DOCUMENT_FIELDS if c in data]
+    placeholders = ", ".join("?" for _ in cols)
+    sql = f"INSERT INTO documents ({', '.join(cols)}) VALUES ({placeholders})"
+    if IS_POSTGRES:
+        sql += " RETURNING id"
+        cur = conn.execute(sql, [data.get(c) for c in cols])
+        return int(cur.fetchone()["id"])
+    cur = conn.execute(sql, [data.get(c) for c in cols])
+    return int(cur.lastrowid)
+
+
+def update_document(conn, doc_id: int, data: dict[str, Any]) -> None:
+    cols = [c for c in DOCUMENT_FIELDS if c in data]
+    if not cols:
+        return
+    assignments = ", ".join(f"{c} = ?" for c in cols)
+    conn.execute(
+        f"UPDATE documents SET {assignments} WHERE id = ?", [*(data.get(c) for c in cols), doc_id]
+    )
+
+
+def delete_document(conn, doc_id: int) -> None:
+    conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+
+
+def fetch_documents(conn) -> list:
+    """List documents newest-first, without the `data` blob (keeps the listing
+    query cheap — fetch_document() below returns the full row including bytes
+    when a specific document's content is actually needed)."""
+    return conn.execute(
+        "SELECT id, name, category, tags, role_id, filename, mime_type, size_bytes, created_at "
+        "FROM documents ORDER BY created_at DESC, id DESC"
+    ).fetchall()
+
+
+def fetch_document(conn, doc_id: int):
+    return conn.execute("SELECT * FROM documents WHERE id = ?", (doc_id,)).fetchone()

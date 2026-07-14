@@ -371,4 +371,49 @@ elsewhere in the app.
 
 ---
 
+### ADR-014 — Document library: stored in the database, not local disk
+
+**Context.** Every document-producing path in the app (the offline
+cover-letter button, ADR-013's AI drafting, and the agent queue writing to
+each user's own machine) writes its output as a file. Locally that's fine —
+the user's own filesystem. Hosted on Render, it isn't: local disk is
+ephemeral, wiped on every restart/redeploy, so a document generated an hour
+ago can simply be gone the next time the app spins up. The user also wanted
+a general place to keep documents that aren't tied to a single application —
+a master resume, certificates — with tags so a CV drafted for one role can be
+found and reused for a similar one later.
+
+**Decision.** A `documents` table (bytes stored directly as a `BLOB`/`BYTEA`
+column), added to the same `SCHEMA`/`SCHEMA_POSTGRES` strings `jobs` already
+uses — so it's created automatically wherever `jobs` is, lives in the same
+per-user Postgres schema with no new wiring, and needs no separate storage
+service (S3, a Render Disk) to survive redeploys. Each row optionally links
+to a `jobs.id` (`ON DELETE SET NULL` — deleting a role doesn't take its
+documents with it) and carries free-text, comma-separated `tags`. The two
+in-app generation paths (cover-letter button, AI drafting) auto-save into
+this table alongside writing their file as before, tagged with the detected
+sector (reusing `cv_builder.detect_sector`) and the role's title — the same
+signal ADR-007's sector-aware CV builder already computes, repurposed here
+for retrieval instead of content selection. A manual upload path
+(`st.file_uploader`) covers everything that isn't tied to a specific
+application.
+
+**Rejected: keep using local disk, add a Render persistent Disk instead.**
+Would have fixed the survival problem but only for the hosted deployment —
+still two different storage models to reason about (disk locally, Disk
+mount on Render), plus a paid add-on. Storing bytes in the same database
+already backing everything else is one model everywhere, free on both
+backends, and consistent with ADR-001's local-first philosophy (one file is
+the source of truth).
+
+**Consequences.** Documents survive exactly as well as the rest of the data
+does — a Postgres backup covers them too, with no separate backup story. The
+trade-off is `jobs.db` / the Postgres instance grows with document bytes
+rather than staying pure metadata; acceptable at CV/cover-letter/certificate
+scale (KBs–low MBs each), and the listing query (`fetch_documents`)
+deliberately excludes the blob column so browsing the library stays cheap
+regardless of how large any individual document is.
+
+---
+
 *Add new decisions as `ADR-NNN` records above this line, newest last.*

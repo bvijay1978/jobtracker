@@ -16,6 +16,7 @@ import streamlit as st
 
 import config
 import db
+import documents as doc_lib
 import followup_queue
 
 st.set_page_config(page_title="Job Application Tracker", page_icon="🎯", layout="wide")
@@ -700,18 +701,26 @@ else:
         import cover_letter
 
         with db.connect(schema=current_user) as conn:
-            row = conn.execute("SELECT * FROM jobs WHERE id = ?", (role_map[chosen],)).fetchone()
+            row = dict(
+                conn.execute("SELECT * FROM jobs WHERE id = ?", (role_map[chosen],)).fetchone()
+            )
             path = cover_letter.generate_cover_letter(
-                dict(row),
+                row,
                 out_dir=config.cover_letter_dir_for(current_user),
                 profile_path=config.profile_path_for(current_user),
             )
             db.update_job(conn, role_map[chosen], {"cover_letter": path.name})
+            doc_bytes = path.read_bytes()
+            doc_lib.save(
+                conn, name=f"Cover Letter — {row['company']} — {row['title']}",
+                category="Cover Letter", tags=doc_lib.role_tags(row), role_id=row["id"],
+                filename=path.name, data=doc_bytes, mime_type=doc_lib.DOCX_MIME,
+            )
             conn.commit()
         refresh()
         # Stash the bytes now — the rerun below re-executes the whole script, so
         # a download_button placed only inside this `if` would vanish immediately.
-        st.session_state["last_cover_letter"] = (path.name, path.read_bytes())
+        st.session_state["last_cover_letter"] = (path.name, doc_bytes)
         st.rerun()
 
     if st.session_state.get("last_cover_letter"):
@@ -786,16 +795,28 @@ else:
                     profile_path=config.profile_path_for(current_user),
                     out_dir=config.cover_letter_dir_for(current_user),
                 )
+                cv_bytes, cl_bytes = cv_path.read_bytes(), cl_path.read_bytes()
                 with db.connect(schema=current_user) as conn:
                     db.update_job(conn, row["id"], {
                         "status": "CV Drafted", "cv_version": cv_path.name,
                         "cover_letter": cl_path.name,
                     })
+                    tags = doc_lib.role_tags(row)
+                    doc_lib.save(
+                        conn, name=f"CV — {row['company']} — {row['title']}",
+                        category="Resume", tags=tags, role_id=row["id"],
+                        filename=cv_path.name, data=cv_bytes, mime_type=doc_lib.DOCX_MIME,
+                    )
+                    doc_lib.save(
+                        conn, name=f"Cover Letter — {row['company']} — {row['title']}",
+                        category="Cover Letter", tags=tags, role_id=row["id"],
+                        filename=cl_path.name, data=cl_bytes, mime_type=doc_lib.DOCX_MIME,
+                    )
                     conn.commit()
                 refresh()
                 st.session_state["last_ai_draft"] = {
-                    "cv": (cv_path.name, cv_path.read_bytes()),
-                    "cl": (cl_path.name, cl_path.read_bytes()),
+                    "cv": (cv_path.name, cv_bytes),
+                    "cl": (cl_path.name, cl_bytes),
                 }
                 st.rerun()
             except Exception as e:
@@ -817,3 +838,99 @@ else:
         "screening CV and a tailored cover letter (same honesty rule as the agent queue — "
         "genuine experience only), and saves both. Review before sending."
     )
+
+# --- Documents library ------------------------------------------------------ #
+# Stored in the database (ADR-014), not local disk, so — unlike the generated
+# files above — these survive restarts/redeploys on the hosted deployment.
+# The two generation paths above auto-save into this same library, tagged by
+# role, so a CV drafted for one role can be found and reused for similar ones.
+st.divider()
+st.subheader("📁 Documents")
+
+with db.connect(schema=current_user) as conn:
+    doc_rows = [dict(r) for r in db.fetch_documents(conn)]
+doc_cols = [
+    "id", "name", "category", "tags", "role_id", "filename",
+    "mime_type", "size_bytes", "created_at",
+]
+docs_df = pd.DataFrame(doc_rows, columns=doc_cols)
+role_lookup = {
+    int(r["id"]): f"{r['title']} — {r['company']}"
+    for _, r in _all_df.iterrows() if pd.notna(r["id"])
+}
+
+with st.expander("⬆️ Upload a document", expanded=docs_df.empty):
+    up_file = st.file_uploader("File", key="doc_upload")
+    up_name = st.text_input(
+        "Name", value=(up_file.name if up_file else ""), key="doc_name",
+    )
+    up_cat = st.selectbox("Category", doc_lib.CATEGORIES, key="doc_cat")
+    up_tags = st.text_input(
+        "Tags (comma-separated)", key="doc_tags",
+        help="e.g. FS, Senior PM — used to find and reuse this document for similar roles",
+    )
+    up_role_opts = {"— none —": None, **{v: k for k, v in role_lookup.items()}}
+    up_role = st.selectbox("Linked role (optional)", list(up_role_opts), key="doc_role")
+    if st.button("💾 Save document", key="doc_save"):
+        if not up_file:
+            st.warning("Choose a file first.")
+        else:
+            with db.connect(schema=current_user) as conn:
+                doc_lib.save(
+                    conn, name=up_name or up_file.name, category=up_cat, tags=up_tags,
+                    role_id=up_role_opts[up_role], filename=up_file.name,
+                    data=up_file.getvalue(), mime_type=up_file.type,
+                )
+                conn.commit()
+            st.rerun()
+
+if docs_df.empty:
+    st.caption("No documents yet — upload one above, or generate a CV/cover letter for a role.")
+else:
+    all_tags = sorted({
+        t.strip() for tags in docs_df["tags"].dropna() for t in tags.split(",") if t.strip()
+    })
+    tag_filter = st.multiselect("Filter by tag", all_tags, key="doc_tag_filter")
+    view_docs = docs_df
+    if tag_filter:
+        view_docs = view_docs[view_docs["tags"].fillna("").apply(
+            lambda t: any(tag in [x.strip() for x in t.split(",")] for tag in tag_filter)
+        )]
+
+    display_df = view_docs.copy()
+    display_df["role"] = display_df["role_id"].map(
+        lambda rid: role_lookup.get(int(rid), "") if pd.notna(rid) else ""
+    )
+    st.dataframe(
+        display_df[["name", "category", "tags", "role", "size_bytes", "created_at"]],
+        column_config={
+            "size_bytes": st.column_config.NumberColumn("Size (bytes)"),
+            "created_at": st.column_config.TextColumn("Uploaded"),
+        },
+        hide_index=True,
+        width="stretch",
+    )
+
+    doc_pick_opts = {f"{int(r['id'])} · {r['name']}": int(r["id"]) for _, r in view_docs.iterrows()}
+    doc_pick = st.selectbox("Select a document", list(doc_pick_opts), key="doc_pick")
+    with db.connect(schema=current_user) as conn:
+        picked = dict(db.fetch_document(conn, doc_pick_opts[doc_pick]))
+
+    dcol1, dcol2 = st.columns(2)
+    dcol1.download_button(
+        "⬇️ Download", data=bytes(picked["data"]), file_name=picked["filename"],
+        mime=picked["mime_type"] or "application/octet-stream", key="doc_dl", width="stretch",
+    )
+    if dcol2.button("🗑️ Delete", key="doc_delete_btn", width="stretch"):
+        with db.connect(schema=current_user) as conn:
+            db.delete_document(conn, doc_pick_opts[doc_pick])
+            conn.commit()
+        st.rerun()
+
+    tcol1, tcol2 = st.columns([3, 1])
+    edited_tags = tcol1.text_input("Tags", value=picked.get("tags") or "", key="doc_tags_edit")
+    if tcol2.button("💾 Update tags", key="doc_tags_save", width="stretch"):
+        with db.connect(schema=current_user) as conn:
+            db.update_document(conn, doc_pick_opts[doc_pick], {"tags": edited_tags})
+            conn.commit()
+        st.rerun()
