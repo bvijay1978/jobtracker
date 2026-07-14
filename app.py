@@ -213,8 +213,12 @@ week_ago = today - dt.timedelta(days=7)
 
 
 def _applied_recently(s: pd.Series) -> int:
-    dates = pd.to_datetime(s, errors="coerce").dt.date
-    return int(((dates >= week_ago) & (dates <= today)).sum())
+    # Compare as Timestamps, not .dt.date — pandas/numpy version differences
+    # between environments (e.g. local vs. Render's freshly resolved pandas)
+    # can make .dt.date not reduce to plain python `date` objects, breaking a
+    # `date`-vs-`date` comparison. Timestamp-vs-Timestamp is stable everywhere.
+    dates = pd.to_datetime(s, errors="coerce")
+    return int(((dates >= pd.Timestamp(week_ago)) & (dates <= pd.Timestamp(today))).sum())
 
 
 def _follow_up_due_mask(d: pd.DataFrame) -> pd.Series:
@@ -317,8 +321,8 @@ if not _needs_contact.empty:
 if not _fu_due.empty:
     fu_df = _fu_due.copy()
     fu_df["send"] = fu_df["follow_up"].fillna(0).astype(int) != 2
-    _fu_applied = pd.to_datetime(fu_df["date_applied"], errors="coerce").dt.date
-    fu_df["days"] = _fu_applied.map(lambda d_: (today - d_).days if pd.notna(d_) else None)
+    _fu_applied = pd.to_datetime(fu_df["date_applied"], errors="coerce")
+    fu_df["days"] = (pd.Timestamp(today) - _fu_applied).dt.days
     fu_df = fu_df.sort_values("date_applied", na_position="last")
     _orig_send = dict(zip(fu_df["id"].astype(int), fu_df["send"]))
 
@@ -475,9 +479,9 @@ if not to_action.empty:
                 st.rerun()
 
 # --- Filters --------------------------------------------------------------- #
-_found_dates = pd.to_datetime(df["date_found"], errors="coerce").dt.date.dropna()
-_min_found = _found_dates.min() if not _found_dates.empty else today
-_max_found = _found_dates.max() if not _found_dates.empty else today
+_found_ts = pd.to_datetime(df["date_found"], errors="coerce").dropna()
+_min_found = _found_ts.min().date() if not _found_ts.empty else today
+_max_found = _found_ts.max().date() if not _found_ts.empty else today
 
 with st.sidebar:
     if st.button("🔄 Refresh data", width="stretch"):
@@ -534,8 +538,8 @@ if company_sel:
     view = view[view["company"].isin(company_sel)]
 if isinstance(date_range, (tuple, list)) and len(date_range) == 2:
     lo, hi = date_range
-    found = pd.to_datetime(view["date_found"], errors="coerce").dt.date
-    view = view[(found.isna()) | ((found >= lo) & (found <= hi))]
+    found = pd.to_datetime(view["date_found"], errors="coerce")
+    view = view[(found.isna()) | ((found >= pd.Timestamp(lo)) & (found <= pd.Timestamp(hi)))]
 if search.strip():
     q = search.strip().lower()
     hay = (
