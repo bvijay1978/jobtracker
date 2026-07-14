@@ -768,6 +768,7 @@ else:
             st.warning("Paste the job description first.")
         else:
             import ai_draft
+            import cover_letter
             import screening_cv
 
             with db.connect(schema=current_user) as conn:
