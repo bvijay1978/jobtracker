@@ -286,4 +286,44 @@ unchanged. See [docs/DEPLOY_RENDER.md](DEPLOY_RENDER.md) for the deploy steps.
 
 ---
 
+### ADR-012 — Cover letters: offline default, JD-tailored via the same CV queue
+
+**Context.** `cover_letter.py`'s offline draft (seeded from the profile since
+a later fix — no more empty brackets) is still generic: it can't mirror a
+specific job description's language or choose which achievements to lead
+with, because that's a language-understanding task and the app has no LLM
+(ADR-002). "Draft CV & Cover Letter" already existed as a status distinct
+from "Draft CV", but nothing acted on the "& Cover Letter" part — it queued
+the same screening CV and produced no letter at all.
+
+**Decision.** No new queue module. When Claude processes the existing
+screening-CV queue (`screening_queue.list_queue`, ADR-008) and finds a role
+whose status is exactly **Draft CV & Cover Letter**, it also reads the JD and
+writes 1-2 tailored body paragraphs in the same pass — mirroring the JD's
+language against the candidate's *genuine* experience, the same honesty rule
+as the screening CV (no invented claims) — then calls
+`cover_letter.generate_cover_letter(role, body_paragraphs=[...], profile_path=...,
+out_dir=...)`, which slots them straight into the letter in place of the
+offline summary, and records the filename with a plain
+`db.update_job(conn, role_id, {"cover_letter": filename})` (the same write the
+in-app button already does — no dedicated queue/record function needed for
+something this simple).
+
+**Rejected: a separate cover-letter queue, filtered independently by
+status.** Once `screening_queue.record_result` settles a role to **CV
+Drafted**, a second automation filtering on the "...& Cover Letter" status
+would never see the role again — whichever of (CV, letter) runs first flips
+the status away from the trigger value the other one is watching for. Doing
+both in one pass, off one JD read, sidesteps the ordering hazard entirely and
+is also just less work (one JD read instead of two).
+
+**Consequences.** The offline in-app button is unchanged (still the
+profile-seeded default, no LLM, works with no Claude session at all). JD
+quality now matches the screening CV's, for the cost of Claude reading the JD
+once instead of twice. If a genuinely large cover-letter-specific feature set
+shows up later (e.g. independent re-tailoring without re-running the CV),
+revisit as its own queue then.
+
+---
+
 *Add new decisions as `ADR-NNN` records above this line, newest last.*

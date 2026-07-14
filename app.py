@@ -266,15 +266,22 @@ m6.metric(
 
 # --- Screening-CV queue banner (persistent) ------------------------------- #
 # Roles set to Draft CV are a queue only — the app writes nothing; Claude drafts
-# them (ADR-008). Surface the queue and the exact prompt to copy into Cowork.
+# them (ADR-008). "...& Cover Letter" additionally queues a JD-tailored letter,
+# authored in the same pass (ADR-012). Surface the queue and the copy-prompt.
 _cv_queued = df[df["status"].isin(["Draft CV", "Draft CV & Cover Letter"])]
+_letter_queued = df[df["status"] == "Draft CV & Cover Letter"]
 if not _cv_queued.empty:
     with st.container(border=True):
         st.markdown(f"#### 🤖 {len(_cv_queued)} role(s) queued for a screening CV")
+        letter_note = (
+            f" {len(_letter_queued)} also queued for a JD-tailored cover letter."
+            if not _letter_queued.empty else ""
+        )
         st.caption(
-            "Set to **Draft CV** but not yet written — the app queues, Claude drafts. "
-            "Copy the prompt below into Claude (Cowork); it reads each job description and "
-            "writes the optimised screening CV, then settles the role to **CV Drafted**."
+            "Set to **Draft CV** (or **Draft CV & Cover Letter**) but not yet written — "
+            "the app queues, Claude drafts. Copy the prompt below into Claude (Cowork); it "
+            "reads each job description and writes the optimised screening CV, then settles "
+            f"the role to **CV Drafted**.{letter_note}"
         )
         st.code("draft the queued screening CVs", language=None)
 
@@ -469,9 +476,10 @@ if not to_action.empty:
             st.success("Saved — " + (", ".join(parts) if parts else "no changes") + ".")
             if res["queued"]:
                 st.info(
-                    "🤖 Queued for a screening CV — ask Claude in Cowork to "
+                    "🤖 Queued for a screening CV (and a JD-tailored cover letter, if you "
+                    "picked **Draft CV & Cover Letter**) — ask Claude in Cowork to "
                     "“draft the queued screening CVs”. It reads each job description "
-                    "and writes the optimised draft (you review before sending)."
+                    "and writes the optimised draft(s) (you review before sending)."
                 )
             for err in res["errors"]:
                 st.warning(err)

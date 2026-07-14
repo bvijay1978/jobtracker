@@ -7,6 +7,17 @@ role it reads the JD from the stored link, authors the keyword-mirrored
 ``screening`` payload, renders it with ``screening_cv.generate_screening_cv``,
 then calls ``record_result`` here to file the outcome back onto the role.
 
+**If the role's status is ``Draft CV & Cover Letter``** (ADR-012): in the same
+pass, before calling ``record_result`` (which settles the role to ``CV
+Drafted``), also write 1-2 tailored body paragraphs mirroring the JD's
+language against the candidate's *genuine* experience — same honesty rule as
+the screening CV — render them with
+``cover_letter.generate_cover_letter(role, body_paragraphs=[...], ...)``, and
+file the filename with a plain
+``db.update_job(conn, role_id, {"cover_letter": filename})``. Doing both off
+one JD read, in one pass, avoids a separate queue racing the status change
+this one makes.
+
 The functions take an explicit connection so callers (and tests) stay in control
 of which database they touch — never an implicit write to the canonical one.
 """
