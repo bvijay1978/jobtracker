@@ -4,3 +4,4 @@ openpyxl>=3.1
 python-dotenv>=1.0
 python-docx>=1.1
 psycopg2-binary>=2.9  # optional — only needed for the hosted Postgres deployment
+anthropic>=0.68  # optional — only needed for in-app AI CV/cover-letter drafting

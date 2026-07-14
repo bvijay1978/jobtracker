@@ -726,3 +726,94 @@ else:
         "recorded in the **Cover letter** column. It's a starting draft — finish "
         "the bracketed parts, or ask Claude for a fully tailored version."
     )
+
+# --- AI-tailored CV & cover letter (optional — needs ANTHROPIC_API_KEY) --- #
+# A third path alongside the offline button above and the "Draft CV & Cover
+# Letter" agent queue (ADR-008/012): a direct in-app call to Claude, for a
+# one-click JD-tailored draft with no separate chat needed. Entirely opt-in —
+# unset, this section doesn't render and nothing else changes (ADR-013).
+st.divider()
+st.subheader("✨ AI-tailored CV & cover letter")
+if not os.environ.get("ANTHROPIC_API_KEY"):
+    st.caption(
+        "Set `ANTHROPIC_API_KEY` to draft a JD-tailored CV and cover letter here in "
+        "one click. Until then, use **Draft CV & Cover Letter** in the To-action queue "
+        "above and ask Claude to process it — same output, via a chat instead of a button."
+    )
+elif df.empty:
+    st.caption("Add a role first.")
+else:
+    ai_role_map = {}
+    for _, r in df.iterrows():
+        company = r["company"] if pd.notna(r["company"]) else "—"
+        title = r["title"] if pd.notna(r["title"]) else "(untitled)"
+        ai_role_map[f"{int(r['id'])} · {title} — {company}"] = int(r["id"])
+
+    ai_pick = st.selectbox("Role", list(ai_role_map), key="ai_role", label_visibility="collapsed")
+    jd_text = st.text_area(
+        "Paste the job description", key="ai_jd_text", height=180,
+        placeholder="Paste the full job ad here — the more detail, the better the draft.",
+    )
+    if st.button("✨ Draft tailored CV + cover letter", type="primary", width="stretch"):
+        if not jd_text.strip():
+            st.warning("Paste the job description first.")
+        else:
+            import ai_draft
+            import screening_cv
+
+            with db.connect(schema=current_user) as conn:
+                row = dict(conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (ai_role_map[ai_pick],)
+                ).fetchone())
+            try:
+                with st.spinner("Drafting with Claude…"):
+                    payload = ai_draft.draft(
+                        row, jd_text, profile_path=config.profile_path_for(current_user)
+                    )
+                screening = {
+                    "target_title": payload.target_title,
+                    "summary": payload.summary,
+                    "core_skills": payload.core_skills,
+                    "experience": [e.model_dump() for e in payload.experience],
+                }
+                cv_path = screening_cv.generate_screening_cv(
+                    row, screening,
+                    profile_path=config.profile_path_for(current_user),
+                    out_dir=config.cv_dir_for(current_user),
+                )
+                cl_path = cover_letter.generate_cover_letter(
+                    row, body_paragraphs=payload.cover_letter_paragraphs,
+                    profile_path=config.profile_path_for(current_user),
+                    out_dir=config.cover_letter_dir_for(current_user),
+                )
+                with db.connect(schema=current_user) as conn:
+                    db.update_job(conn, row["id"], {
+                        "status": "CV Drafted", "cv_version": cv_path.name,
+                        "cover_letter": cl_path.name,
+                    })
+                    conn.commit()
+                refresh()
+                st.session_state["last_ai_draft"] = {
+                    "cv": (cv_path.name, cv_path.read_bytes()),
+                    "cl": (cl_path.name, cl_path.read_bytes()),
+                }
+                st.rerun()
+            except Exception as e:
+                st.error(f"Drafting failed: {e}")
+
+    if st.session_state.get("last_ai_draft"):
+        draft_files = st.session_state["last_ai_draft"]
+        st.success("Draft saved — status set to **CV Drafted**.")
+        dl1, dl2 = st.columns(2)
+        cv_name, cv_bytes = draft_files["cv"]
+        cl_name, cl_bytes = draft_files["cl"]
+        dl1.download_button("⬇️ Download CV", data=cv_bytes, file_name=cv_name, key="dl_ai_cv")
+        dl2.download_button(
+            "⬇️ Download cover letter", data=cl_bytes, file_name=cl_name, key="dl_ai_cl",
+        )
+
+    st.caption(
+        "Reads the pasted job description and your profile, writes a keyword-matched "
+        "screening CV and a tailored cover letter (same honesty rule as the agent queue — "
+        "genuine experience only), and saves both. Review before sending."
+    )

@@ -326,4 +326,49 @@ revisit as its own queue then.
 
 ---
 
+### ADR-013 — Optional in-app AI drafting: direct API call, documents only
+
+**Context.** ADR-012's queue (Draft CV & Cover Letter → ask Claude) works but
+is a two-step, two-tool flow: set a status in the app, then separately open
+Claude and type a prompt. The user asked whether Claude could be called
+directly from the app instead, for a true one-click draft.
+
+**Decision.** Add an optional, separate path — a new **✨ AI-tailored CV &
+cover letter** section (`ai_draft.py`) that calls the Anthropic API directly
+from the Streamlit process, gated entirely on `ANTHROPIC_API_KEY` being set
+(unset, the section doesn't render — everything else is unchanged). The user
+pastes the JD text (no attempt to auto-fetch the job URL — many boards block
+scraping or require JS rendering; pasting is reliable and keeps scope small),
+picks a role, and clicks once. `ai_draft.draft()` sends the JD + the
+candidate's real profile to Claude with the same honesty rule as the
+screening CV (ADR-008: genuine experience only, never invented), and gets
+back a structured payload (Pydantic `output_format`, not free text) shaped to
+match exactly what `screening_cv.generate_screening_cv` and
+`cover_letter.generate_cover_letter(..., body_paragraphs=...)` already
+accept — so this path reuses 100% of the existing document rendering; the
+only new code is the API call and payload shape.
+
+**Scope: documents only, not Gmail-dependent workflows.** Contact resolution
+and follow-up drafting stay "ask Claude" — bringing those in-app would mean
+storing Gmail OAuth tokens for both users in the hosted database, a
+meaningfully bigger and more sensitive piece of infrastructure than one API
+key (see ADR-002/ADR-003, which kept Gmail out of the app's scope for the
+same reason). CV/cover-letter drafting needs only the JD text and the
+profile — both already in hand — so it's the one workflow that can move
+in-app without that trade-off.
+
+**Cost is explicit and separate.** Unlike "ask Claude" (which rides on
+whatever Claude session/subscription the user already has), this bills
+per-generation against `ANTHROPIC_API_KEY` — a deliberate, disclosed new
+recurring cost the user opted into, not a hidden one.
+
+**Consequences.** Three ways to get a drafted CV/cover letter now coexist:
+the fully offline button (no LLM, instant, generic), the agent queue (any
+Claude session, free beyond what's already paid for, two steps), and this
+one-click path (fastest, but billed separately). All three write the same
+kind of output through the same renderers, so none of them is a special case
+elsewhere in the app.
+
+---
+
 *Add new decisions as `ADR-NNN` records above this line, newest last.*

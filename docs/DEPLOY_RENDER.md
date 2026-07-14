@@ -31,7 +31,21 @@ straight from it, so just make sure your latest commits are pushed.
    to the repo — you set it once, here, manually.
 3. Save — Render redeploys automatically.
 
-## 4. First-run smoke test
+## 4. (Optional) Enable one-click AI drafting
+
+The app can call Claude directly to draft a JD-tailored CV and cover letter
+in one click (ADR-013) — no separate chat needed. This is optional and has
+its own ongoing cost (billed per generation, separate from whatever you
+already pay for Claude):
+
+1. Get an API key from [console.anthropic.com](https://console.anthropic.com).
+2. Open the `jobtracker` service → **Environment** → add `ANTHROPIC_API_KEY`
+   (also `sync: false` — never committed).
+3. Save — Render redeploys. The **✨ AI-tailored CV & cover letter** section
+   at the bottom of the app now works; without the key, it just shows a note
+   pointing at the existing "ask Claude" queue instead.
+
+## 5. First-run smoke test
 
 1. Open the service URL. Free-tier services spin down after 15 minutes idle,
    so the first hit after a while can take 30-60 seconds to wake up — that's
@@ -42,17 +56,20 @@ straight from it, so just make sure your latest commits are pushed.
    log back in, pick **Radha** — confirm the board is empty and the test role
    from step 2 does *not* appear.
 4. Generate a cover letter for a role and confirm the **⬇️ Download** button
-   delivers the file — this is the one feature that runs on the server itself
-   rather than on your own machine, so it needs the download button to be
-   reachable at all (see ADR-011).
+   delivers the file — this is one of two features that run on the server
+   itself rather than on your own machine, so it needs the download button to
+   be reachable at all (see ADR-011). If you set `ANTHROPIC_API_KEY`, also try
+   the **✨ AI-tailored CV & cover letter** section with a pasted job ad.
 5. Delete the test role, or leave it — either way, you're set.
 
 ## Notes for the agent-side workflows (Claude drafting CVs, resolving
 contacts, drafting follow-ups)
 
-These still run wherever you run Claude (per ADR-002 — the app never talks to
-an LLM itself), not on Render. To point a local Claude session at the same
-hosted data instead of your local `jobs.db`:
+These still run wherever you run Claude (per ADR-002 — the app itself only
+talks to an LLM directly for the optional one-click drafting above; contact
+resolution and follow-up drafting need Gmail, which stays off the server on
+purpose), not on Render. To point a local Claude session at the same hosted
+data instead of your local `jobs.db`:
 
 1. Set `DATABASE_URL` in your local `.env` (copy it from the Render dashboard
    → `jobtracker-db` → **Connections**) and set `JOBTRACKER_PROFILE` /

@@ -26,3 +26,5 @@ services:
         value: "Vijay:vijay,Radha:radha"
       - key: APP_PASSWORD
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false  # optional — only needed for the in-app AI CV/cover-letter drafting
